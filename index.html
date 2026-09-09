@@ -1,0 +1,1592 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>よけゲー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+1p:wght@400;700;800&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+  :root{
+    --bg:#171a1f; --panel:#1e222a; --sunk:#12151a;
+    --line:#333a47; --ink:#e8ebf1; --ink-2:#98a1b2; --ink-3:#68707f;
+    --cyan:#5ec8f5; --amber:#f0b429; --green:#4ec9a0; --ice:#dff0ff;
+    --sans:"M PLUS 1p","Hiragino Sans","Yu Gothic",sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; background:var(--bg); color:var(--ink);
+    font-family:var(--sans); line-height:1.7;
+    display:flex; align-items:center; justify-content:center; padding:24px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .app{width:100%; max-width:720px}
+  [hidden]{display:none !important}
+
+  .bar{
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    background:var(--panel); border:1px solid var(--line); border-bottom:0;
+    border-radius:4px 4px 0 0; padding:9px 14px;
+  }
+  .bar h1{font-size:15px; font-weight:800; margin:0; letter-spacing:.02em}
+  .k{
+    font-family:var(--mono); font-size:10px; font-weight:700;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3);
+  }
+  .val{
+    font-family:var(--mono); font-size:13px; font-weight:700; color:var(--ink);
+    font-variant-numeric:tabular-nums; letter-spacing:.03em;
+  }
+  .val.best{color:var(--amber)}
+  .val.slow{color:var(--green)}
+  .stat{display:flex; align-items:baseline; gap:6px}
+  .stat.push{margin-left:auto}
+
+  canvas{
+    display:block; width:100%; height:340px;
+    border:1px solid var(--line); background:#151a30;
+    touch-action:none; cursor:crosshair;
+  }
+
+  .foot{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    background:var(--panel); border:1px solid var(--line); border-top:0;
+    padding:12px 14px;
+  }
+  button{
+    font-family:var(--sans); font-size:13px; font-weight:700;
+    color:#101318; background:var(--cyan);
+    border:0; border-radius:3px; padding:9px 22px; cursor:pointer;
+  }
+  button:hover{filter:brightness(1.12)}
+  button:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+
+  .chip{
+    font-family:var(--mono); font-size:11px; font-weight:700; letter-spacing:.08em;
+    border:1px solid var(--line); border-radius:3px; padding:5px 9px;
+    color:var(--ink-2); background:var(--sunk); white-space:nowrap;
+  }
+  .chip b{font-weight:700; font-variant-numeric:tabular-nums}
+  .chip.on-shield{color:var(--ice); border-color:#5d7d94}
+  .chip.on-cut{color:#d6e2ec; border-color:#6c7d8c}
+  .chip.on-ripple{color:var(--amber); border-color:#7a6224}
+  .hint{margin-left:auto; font-size:12px; color:var(--ink-3); font-family:var(--mono)}
+
+  .app > *:last-child{border-radius:0 0 4px 4px}   /* 最後の段だけ角を丸める */
+
+  .stage{position:relative}
+
+  .veil{
+    position:absolute; inset:0; z-index:2;
+    background:rgba(10,8,13,.90);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:10px; padding:16px 14px; text-align:center;
+  }
+  .veil__title{margin:0; font-size:26px; font-weight:800; letter-spacing:.03em}
+  .veil__tc{
+    margin:0; font-family:var(--mono); font-size:19px; font-weight:700;
+    color:var(--amber); font-variant-numeric:tabular-nums; letter-spacing:.03em;
+  }
+  .veil__rank{margin:0; font-size:13px; color:var(--ink-2); min-height:1.6em}
+  .veil__rank b{color:var(--ink); font-size:16px; font-weight:800}
+  .veil__msg{margin:0; font-size:11px; color:var(--ink-3); font-family:var(--mono); min-height:1.4em}
+  .veil__acts{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:2px}
+  .veil__head{display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center}
+  .veil__head input{
+    font-family:var(--sans); font-size:13px; color:var(--ink);
+    background:var(--sunk); border:1px solid var(--line); border-radius:3px;
+    padding:5px 9px; width:8em; text-align:center;
+  }
+  .veil__head input:focus-visible{outline:2px solid var(--cyan); outline-offset:1px}
+
+  .act{
+    font-family:var(--sans); font-size:13px; font-weight:700;
+    color:var(--ink); background:var(--panel);
+    border:1px solid var(--line); border-radius:3px;
+    padding:8px 15px; cursor:pointer;
+  }
+  .act:hover{border-color:var(--ink-3)}
+  .act--primary{color:#101318; background:var(--cyan); border-color:var(--cyan)}
+  .act:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+
+  .veil--rank{justify-content:flex-start; gap:8px}
+  .rank__list{
+    list-style:none; margin:0; padding:0; width:100%; max-width:330px;
+    display:grid; gap:1px; background:#262c36; border-radius:3px;
+    overflow-y:auto; overflow-x:hidden; flex:1; min-height:0;
+  }
+  .rank__list li{
+    display:grid; grid-template-columns:2.4em 1fr auto; align-items:baseline; gap:8px;
+    background:var(--sunk); padding:6px 10px; font-size:13px; text-align:left;
+  }
+  .rank__list li.me{background:#1d2a2b}
+  .rank__list li.gap{justify-items:center; grid-template-columns:1fr; color:var(--ink-3)}
+  .rank__list .rank{
+    font-family:var(--mono); font-size:11px; font-weight:700; color:var(--ink-3);
+    font-variant-numeric:tabular-nums;
+  }
+  .rank__list li:nth-child(1) .rank{color:var(--amber)}
+  .rank__list .who{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .rank__list .tc{font-family:var(--mono); font-size:12px; font-variant-numeric:tabular-nums}
+
+  .lab{
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+    background:var(--sunk); border:1px solid var(--line); border-top:0;
+    border-radius:0 0 4px 4px; padding:10px 14px;
+  }
+  .lab label{display:flex; align-items:center; gap:6px; font-size:12px;
+             color:var(--ink-2); cursor:pointer; user-select:none}
+  .lab label:hover{color:var(--ink)}
+  .lab input{accent-color:var(--cyan); cursor:pointer; margin:0}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="bar">
+    <h1>よけゲー</h1>
+    <span class="k">30.00 fps</span>
+    <span class="stat push"><span class="k">Rate</span><span class="val" id="rate">×1.00</span></span>
+    <span class="stat"><span class="k">Time</span><span class="val" id="time">00:00:00:00</span></span>
+    <span class="stat"><span class="k">Best</span><span class="val best" id="best">00:00:00:00</span></span>
+  </div>
+
+  <div class="stage">
+    <canvas id="cv"></canvas>
+
+    <div class="veil" id="overView" hidden>
+      <p class="veil__title">当たった</p>
+      <p class="veil__tc" id="overTc">00:00:00:00</p>
+      <p class="veil__rank" id="overRank"></p>
+      <div class="veil__acts">
+        <button type="button" class="act act--primary" id="actRetry">もう一度</button>
+        <button type="button" class="act" id="actRank">ランキング</button>
+        <button type="button" class="act" id="actCopy">結果をコピー</button>
+      </div>
+      <p class="veil__msg" id="overMsg"></p>
+    </div>
+
+    <div class="veil veil--rank" id="rankView" hidden>
+      <div class="veil__head">
+        <span class="k">ランキング</span>
+        <input id="playerName" maxlength="12" placeholder="なまえ" aria-label="なまえ">
+      </div>
+      <ol class="rank__list" id="rankList"></ol>
+      <p class="veil__msg" id="rankNote">読み込み中…</p>
+      <div class="veil__acts">
+        <button type="button" class="act act--primary" id="rankBack">もどる</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <button id="btn">スタート</button>
+    <span class="chip" id="chipShield" hidden>SHIELD <b id="shieldVal">5.0</b></span>
+    <span class="chip" id="chipCut" hidden>✂ あと <b id="cutVal">1</b> 回</span>
+    <button type="button" class="chip" id="chipRipple">リップル削除 <b id="rippleVal">READY</b></button>
+    <span class="hint">マウス / 指 / ← →</span>
+  </div>
+
+  <!-- dev-only:start 公開版ではここを丸ごと外す -->
+  <div class="lab">
+    <span class="k">試作</span>
+    <label><input type="checkbox" id="t-drift"> 横に流れる赤</label>
+    <label><input type="checkbox" id="t-fake"> 透けた赤（当たらない）</label>
+    <label><input type="checkbox" id="t-long"> 長尺クリップ</label>
+  </div>
+  <!-- dev-only:end -->
+</div>
+
+<script>
+"use strict";
+
+/* ==========================================================
+   1. 設定 ─ ここの数字だけ変えれば難易度が変わる
+   ========================================================== */
+const CONFIG = {
+  playerWidth:   40,    // 再生ヘッドの幅（小さくすると難しい）
+  playerSpeed:   420,   // キーで動かすときの速さ（px/秒）
+  blockMinWidth: 26,    // 落ちてくるクリップの最小幅
+  blockMaxWidth: 80,    // 　　　　　　　　　　最大幅
+  blockSpeed:    110,   // 落ちる速さ（開始時・px/秒）
+  speedGain:     11,    // 1秒たつごとに速くなる量
+  spawnEvery:    593,   // 出現の間隔（開始時・ミリ秒）
+  spawnGain:     19,    // 1秒たつごとに間隔が縮む量
+  spawnMin:      200,   // 間隔の下限（これ以上は詰まらない）
+  speedSoftCap: 520,    // 落下速度がここを超えたら、伸びが緩やかになる
+  speedTaper:   0.25,   // 超えたあとの伸び方（0.25 = 4分の1の速さで伸びる）
+
+  // --- 救済まわり ---
+  pityAfter:      6,    // 何秒アイテムを取れていなければ助けるか
+  pityRetry:      3,    // 助けを取り逃したとき、次を出すまでの秒数
+  pressureReds:   7,    // 赤がこの数以上なら「追い詰められている」とみなす
+  rippleRush:   2.5,    // 追い詰められている間、リップルが戻る速さの倍率
+  rippleRewind:  15,    // リップルで難易度を何秒ぶん巻き戻すか
+
+  // --- アイテムの出現率。全部足して 0.335、残りが赤 ---
+  // 倍速をやめたぶん（0.050）は緑・壺・ダイヤに配り直した。赤の割合は変えていない。
+  greenChance:    0.140,
+  potChance:      0.065,
+  gemChance:      0.055,
+  scarabChance:   0.040,
+  scissorsChance: 0.035,
+
+  // --- 緑（取ると減速する） ---
+  greenWidth:    30,
+  slowAmount:    0.20,  // 1個取るごとに何割ゆっくりになるか
+  slowFloor:     0.35,  // これ以上は遅くならない下限（緑を重ねたときの最スロー）
+  slowRecover:   0.05,  // 1秒あたり何割ずつ元に戻るか（小さいほど減速が長持ち）
+
+  // --- 壺（ヘビが出て、降ってきたばかりの赤を食べる） ---
+  potWidth:      26,
+  potHeight:     30,
+  snakeEats:      2,
+  snakeSpeed:   430,
+  snakeLength:   26,
+
+  // --- ダイヤ（一定時間シールド） ---
+  gemWidth:      22,
+  gemHeight:     26,
+  shieldTime:   5.0,
+  shieldExtra:   14,    // ヘッドの何px外側まで守るか
+
+  // --- ハサミ（赤を切って助かる。持っている本数だけ耐えられる） ---
+  scissorsSize:  24,
+  scissorsMax:    3,    // 同時に持てる本数
+
+  // --- スカラベ（いちばん下の赤を上へ押し返す） ---
+  scarabWidth:   24,
+  scarabHeight:  22,
+  scarabSpeed:  360,    // 相手に近づく速さ
+  scarabPush:   210,    // 押し上げる速さ
+
+  // --- ヘビとスカラベのお礼（片づけた場所から減速アイテムが落ちる） ---
+  reliefFall:   150,    // 落ちる速さ。赤より遅くして拾う時間を作る
+  reliefHoming: 130,    // 1秒あたり何px、こちらへ寄ってくるか
+
+  // --- リップル削除（スペースキー） ---
+  rippleCooldown: 22,   // 秒
+
+  // --- 時間帯 ---
+  phaseEvery:   35,     // 何秒ごとに時間帯が変わるか（8つで一周＝4分40秒）
+
+  // --- 砂嵐 ---
+  stormEvery:   45,     // 嵐が終わってから、次の予兆までの秒数
+  stormWarn:   2.5,     // 吹きはじめ（予告）の秒数
+  stormTime:    18,     // 嵐が続く秒数
+  windMin:      60,     // 横に流される速さ
+  windMax:     115,
+  stormItems:  1.5,     // 嵐の間、アイテムの出る確率を何倍にするか
+};
+
+const COLOR = {
+  red:"#e2564b", redTop:"#f5a49d",
+  green:"#4ec9a0", greenTop:"#a6e3cd",
+  pot:"#d9a441", potRim:"#f0d089", potDark:"#8a5f22",
+  snake:"#e0c56a", snakeDark:"#9a7d2e", eye:"#2a2410",
+  gem:"#dff0ff", gemFill:"rgba(200,232,255,.30)", gemLine:"rgba(223,240,255,.55)",
+  shieldFill:"rgba(190,225,255,.16)", shieldEdge:"rgba(220,240,255,.85)",
+  steel:"#d6e2ec",
+  scarab:"#2f5a55", scarabEdge:"#c9a44a",
+  cyan:"#5ec8f5", dim:"#c3b09a", ink:"#f2ece2",
+};
+
+/* ==========================================================
+   2. 準備 ─ canvas を画面サイズに合わせる
+   ========================================================== */
+const cv  = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+let W = 0, H = 0, dpr = 1;
+let bdCur = null, bdPrev = null, bdFade = 1;   // 時間帯が変わるとき、前の空とクロスフェードする
+
+function resize(){
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = cv.clientWidth;
+  H = cv.clientHeight;
+  cv.width  = Math.round(W * dpr);
+  cv.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  setBackdrop(state.phase, true);  // 背景は動かないので1枚描いて使い回す
+  if(!state.running) drawTitle();
+}
+window.addEventListener("resize", resize);
+
+/* ==========================================================
+   3. 状態 ─ いまのゲームの中身ぜんぶ
+   ========================================================== */
+const state = {
+  running:    false,
+  blocks:     [],   // 落ちてくるもの
+  snakes:     [],   // 壺から出たヘビ
+  scarabs:    [],   // スカラベ
+  debris:     [],   // 切られた／消された破片
+  playerX:     0,
+  startTime:   0,
+  lastTime:    0,
+  spawnTimer:  0,   // 次の出現までの残り秒数。レートぶん速く減る
+  elapsed:     0,   // 開始からの経過秒数。これがそのまま記録になる
+  difficulty:  0,   // 難易度用の時計。リップルで巻き戻せるので実時間とは別にする
+  sinceItem:   0,   // 最後にアイテムを取ってからの秒数
+  redCount:    0,   // いま画面にある赤の数
+  phase:       0,   // いまの時間帯。35秒ごとに進んで一周する
+  phaseLabel:  0,   // 時間帯の名前を出しておく残り秒数
+  phaseAt:     0,   // その時間帯に入った時刻
+  storm:       0,   // 砂嵐の残り秒数（0なら平常）
+  stormWarn:   0,   // 予兆の残り秒数
+  stormNext:   0,   // 次の予兆までの残り秒数
+  wind:        0,   // 風。符号が向き、大きさが強さ
+  sand:       [],   // 舞っている砂
+  speedScale:  1,   // 緑による減速（0.45〜1）
+  shield:      0,   // シールドの残り秒数
+  scissors:    0,   // ハサミの残り本数。1本につき赤1個ぶん耐えられる
+  rippleCd:    0,   // リップル削除の残りクールダウン
+  flash:       0,   // リップルの発光
+};
+
+let best = Number(localStorage.getItem("dodgeBest")) || 0;
+
+const PLAYER_Y = () => H - 34;
+const PLAYER_H = 10;
+
+/* いまの再生レート。緑を取ると下がる。落ちる速さと出現の刻みがこれに乗る。
+   記録（Time）はレートと関係なく実時間で進むので、減速しても損はしない。 */
+function rate(){
+  return state.speedScale;
+}
+
+/* ==========================================================
+   4. 操作 ─ マウス / 指 / 矢印キー / スペース
+   ========================================================== */
+const keys = {};
+addEventListener("keydown", e => {
+  keys[e.key] = true;
+  if(e.key === "ArrowLeft" || e.key === "ArrowRight") e.preventDefault();
+  if(e.code === "Space"){ e.preventDefault(); rippleDelete(); }   // パソコン用の近道
+});
+addEventListener("keyup", e => { keys[e.key] = false; });
+
+function pointTo(clientX){
+  state.playerX = clientX - cv.getBoundingClientRect().left;
+}
+cv.addEventListener("pointermove", e => pointTo(e.clientX));
+cv.addEventListener("pointerdown", e => { e.preventDefault(); pointTo(e.clientX); });
+
+/* ==========================================================
+   5. ゲームループ ─ 「動かす → 描く」の繰り返し
+   ========================================================== */
+function loop(now){
+  if(!state.running) return;
+  const dt = Math.min((now - state.lastTime) / 1000, 0.05);
+  state.lastTime = now;
+
+  update(dt, now);
+  if(!state.running) return;
+  draw();
+  requestAnimationFrame(loop);
+}
+
+/* ==========================================================
+   6. 更新
+   ========================================================== */
+function update(dt, now){
+  const r = rate();
+  state.elapsed    = (now - state.startTime) / 1000;   // 記録用。巻き戻さない
+  state.difficulty += dt;                              // 難易度用。リップルで巻き戻る
+  state.sinceItem  += dt;
+  state.redCount    = countReds();
+
+  // 時間帯を進める。35秒ごとに切り替わって、8つで一周して戻ってくる。
+  const p = Math.floor(state.elapsed / CONFIG.phaseEvery) % PHASES.length;
+  if(p !== state.phase){
+    state.phase = p; state.phaseAt = state.elapsed; state.phaseLabel = 3.0;
+    setBackdrop(p, false);
+  }
+  if(state.phaseLabel > 0) state.phaseLabel -= dt;
+  if(bdFade < 1) bdFade = Math.min(1, bdFade + dt / 2.5);
+
+  updateStorm(dt);
+
+  // 持続するものを減らす
+  state.speedScale = Math.min(1, state.speedScale + CONFIG.slowRecover * dt);
+  if(state.shield > 0) state.shield = Math.max(0, state.shield - dt);
+  if(state.flash  > 0) state.flash  = Math.max(0, state.flash  - dt);
+
+  // リップルは、赤が溜まって追い詰められているときほど早く戻ってくる
+  if(state.rippleCd > 0){
+    const rush = state.redCount >= CONFIG.pressureReds ? CONFIG.rippleRush : 1;
+    state.rippleCd = Math.max(0, state.rippleCd - dt * rush);
+  }
+
+  // 再生ヘッドを動かす
+  if(keys.ArrowLeft)  state.playerX -= CONFIG.playerSpeed * dt;
+  if(keys.ArrowRight) state.playerX += CONFIG.playerSpeed * dt;
+  const half = CONFIG.playerWidth / 2;
+  state.playerX = Math.max(half, Math.min(W - half, state.playerX));
+
+  spawn(dt, r);
+  updateSnakes(dt, r);
+  updateScarabs(dt, r);
+  updateDebris(dt, r);
+
+  // 落として、当たったか調べる
+  for(let i = state.blocks.length - 1; i >= 0; i--){
+    const b = state.blocks[i];
+
+    if(!b.held) b.y += b.speed * r * dt;         // スカラベに持たれている間は落ちない
+    if(b.vx){                                    // 横に流れる（砂嵐・試作）。壁で跳ね返る。
+      b.x += b.vx * r * dt;
+      if(b.x < 0)       { b.x = 0;       b.vx = -b.vx; }
+      if(b.x + b.w > W) { b.x = W - b.w; b.vx = -b.vx; }
+    }
+    if(b.homing){                                // お礼の減速はこちらへ寄ってくる
+      const dx   = state.playerX - (b.x + b.w / 2);
+      const step = Math.sign(dx) * Math.min(Math.abs(dx), CONFIG.reliefHoming * r * dt);
+      b.x = Math.max(0, Math.min(W - b.w, b.x + step));
+    }
+
+    if(b.y > H){ state.blocks.splice(i, 1); continue; }
+    if(b.kind === "fake" || b.held) continue;    // すり抜ける／運ばれ中は当たらない
+
+    // シールド中の赤は、届く手前で割れる
+    if(state.shield > 0 && b.kind === "red" && shieldHits(b)){
+      shatter(b, 90);
+      state.blocks.splice(i, 1);
+      continue;
+    }
+
+    if(!hits(b)) continue;
+    if(b.kind !== "red") state.sinceItem = 0;    // 何か取れた＝まだ回っている
+
+    if(b.kind === "green"){
+      state.speedScale = Math.max(CONFIG.slowFloor, state.speedScale - CONFIG.slowAmount);
+    } else if(b.kind === "pot"){
+      releaseSnake(b.x + b.w / 2, b.y + b.h / 2);
+    } else if(b.kind === "gem"){
+      state.shield = CONFIG.shieldTime;
+    } else if(b.kind === "scissors"){
+      state.scissors = Math.min(CONFIG.scissorsMax, state.scissors + 1);
+    } else if(b.kind === "scarab"){
+      releaseScarab(b.x + b.w / 2, b.y + b.h / 2);
+    } else if(state.scissors > 0){
+      state.scissors--;                          // ハサミを1本使って切り抜ける
+      shatter(b, 150);
+    } else {
+      gameOver();
+      return;
+    }
+    state.blocks.splice(i, 1);
+  }
+}
+
+/* --- 砂嵐 ------------------------------------------------ */
+/* 予兆(2.5秒) → 嵐(18秒) → 平常(45秒) の繰り返し。
+   時間帯（35秒周期）とわざと周期をずらしてあるので、毎回ちがう組み合わせになる。 */
+function updateStorm(dt){
+  if(state.storm > 0){
+    state.storm -= dt;
+    if(state.storm <= 0){                       // 嵐が抜けた
+      state.storm = 0;
+      state.stormNext = CONFIG.stormEvery;
+      if(!LAB.drift) for(const b of state.blocks) b.vx = 0;
+    }
+  } else if(state.stormWarn > 0){
+    state.stormWarn -= dt;
+    if(state.stormWarn <= 0){                   // 吹きはじめ
+      state.storm = CONFIG.stormTime;
+      for(const b of state.blocks){
+        if(b.kind === "red" || b.kind === "fake") b.vx = gust();
+      }
+    }
+  } else {
+    state.stormNext -= dt;
+    if(state.stormNext <= 0){                   // 予兆が出る
+      state.stormWarn = CONFIG.stormWarn;
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      state.wind = dir * (CONFIG.windMin + Math.random() * (CONFIG.windMax - CONFIG.windMin));
+    }
+  }
+  updateSand(dt);
+}
+
+/* 一粒ごとに少しばらつかせた風 */
+function gust(){ return state.wind * (0.7 + Math.random() * 0.6); }
+
+/* 嵐の濃さ 0〜1。入りと抜けをなめらかにして、唐突に始まらないようにする。 */
+function stormIntensity(){
+  if(state.stormWarn > 0) return 0.30 * (1 - state.stormWarn / CONFIG.stormWarn);
+  if(state.storm <= 0) return 0;
+  return Math.min(1, (CONFIG.stormTime - state.storm) / 2, state.storm / 2.5);
+}
+
+function updateSand(dt){
+  const k = stormIntensity();
+  if(k <= 0){ state.sand.length = 0; return; }
+
+  const want = Math.round(110 * k);
+  while(state.sand.length < want){
+    state.sand.push({
+      x: Math.random() * W, y: Math.random() * H,
+      len: 8 + Math.random() * 28,
+      sp:  240 + Math.random() * 460,
+    });
+  }
+  while(state.sand.length > want) state.sand.pop();
+
+  const dir = Math.sign(state.wind) || 1;
+  for(const g of state.sand){
+    g.x += dir * g.sp * k * dt;
+    g.y += 24 * dt;
+    if(g.x < -50)     g.x = W + 25;
+    if(g.x > W + 50)  g.x = -25;
+    if(g.y > H)       g.y = -10;
+  }
+}
+
+/* 砂ぼこりの膜。背景の上、クリップの下に敷く。 */
+function drawSandHaze(){
+  const k = stormIntensity();
+  if(k <= 0) return;
+  ctx.fillStyle = "rgba(198,152,98," + (0.17 * k).toFixed(3) + ")";
+  ctx.fillRect(0, 0, W, H);
+}
+
+/* 流れる砂。いちばん手前に描いて、風が吹き抜けている感じを出す。 */
+function drawSandStreaks(){
+  const k = stormIntensity();
+  if(k <= 0) return;
+  const dir = Math.sign(state.wind) || 1;
+  ctx.save();
+  ctx.globalAlpha = 0.5 * k;
+  ctx.strokeStyle = "rgba(236,210,166,.9)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for(const g of state.sand){
+    ctx.moveTo(g.x, g.y);
+    ctx.lineTo(g.x - dir * g.len, g.y + 2);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* 予兆のあいだ「砂嵐」と出す。来ると分かっていれば理不尽にならない。 */
+function drawStormWarn(){
+  if(state.stormWarn <= 0) return;
+  const t = 1 - state.stormWarn / CONFIG.stormWarn;
+  ctx.save();
+  ctx.globalAlpha = 0.35 + 0.55 * Math.abs(Math.sin(t * Math.PI * 3));
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#f2d9a8";
+  ctx.font = '800 25px "M PLUS 1p", sans-serif';
+  ctx.fillText("砂 嵐", W / 2, H * 0.44);
+  ctx.restore();
+}
+
+/* --- 出現 ------------------------------------------------ */
+/* 上から順にスロットを見て、当たったものを出す。
+   解禁時間が来ていないスロットは、そのぶん赤になる。 */
+const ITEMS = [
+  { kind:"green",    after:  3, chance:"greenChance"    },
+  { kind:"pot",      after:  6, chance:"potChance"      },
+  { kind:"gem",      after: 10, chance:"gemChance"      },
+  { kind:"scarab",   after: 14, chance:"scarabChance"   },
+  { kind:"scissors", after: 18, chance:"scissorsChance" },
+];
+
+function pickKind(elapsed, boost){
+  let r = Math.random();
+  for(const it of ITEMS){
+    const c = CONFIG[it.chance] * boost;
+    if(r < c) return elapsed > it.after ? it.kind : "red";
+    r -= c;
+  }
+  return "red";
+}
+
+function sizeOf(kind, wide){
+  if(wide)                  return [Math.min(W * 0.5, 150 + Math.random() * 110), 14];
+  if(kind === "pot")        return [CONFIG.potWidth,    CONFIG.potHeight];
+  if(kind === "gem")        return [CONFIG.gemWidth,    CONFIG.gemHeight];
+  if(kind === "green")      return [CONFIG.greenWidth,  14];
+  if(kind === "scissors")   return [CONFIG.scissorsSize, CONFIG.scissorsSize];
+  if(kind === "scarab")     return [CONFIG.scarabWidth, CONFIG.scarabHeight];
+  return [CONFIG.blockMinWidth + Math.random() * (CONFIG.blockMaxWidth - CONFIG.blockMinWidth), 14];
+}
+
+function spawn(dt, r){
+  state.spawnTimer -= dt * r;              // ← レートに乗せる。減速中は次も遅れて来る
+  if(state.spawnTimer > 0) return;
+
+  const d = state.difficulty;
+  // 嵐の間はアイテムを増やして、視界が悪いぶんを埋め合わせる
+  let kind = pickKind(state.elapsed, state.storm > 0 ? CONFIG.stormItems : 1);
+  let nearPlayer = false;
+
+  // 救済：しばらく何も取れていなければ、届く位置に緑かダイヤを落とす
+  if(state.sinceItem > CONFIG.pityAfter){
+    kind = Math.random() < 0.35 ? "gem" : "green";
+    nearPlayer = true;
+    state.sinceItem = CONFIG.pityAfter - CONFIG.pityRetry;
+  }
+
+  let wide = false;
+  if(kind === "red"){                                   // 試作ギミック
+    if(LAB.long && Math.random() < 0.16) wide = true;
+    if(LAB.fake && Math.random() < 0.22) kind = "fake";
+  }
+  const [w, h] = sizeOf(kind, wide);
+
+  state.blocks.push({
+    x: nearPlayer
+         ? Math.max(0, Math.min(W - w, state.playerX - w / 2 + (Math.random() * 80 - 40)))
+         : Math.random() * (W - w),
+    y: -20 - h,
+    w: w, h: h,
+    speed: fallSpeed(d) + Math.random() * 60,
+    kind: kind,
+    held: false,
+    vx: (kind !== "red" && kind !== "fake") ? 0
+        : state.storm > 0 ? gust()                       // 砂嵐で横に流される
+        : LAB.drift       ? (Math.random() * 2 - 1) * 75 // 試作トグル
+        : 0,
+  });
+  state.spawnTimer = Math.max(CONFIG.spawnMin, CONFIG.spawnEvery - d * CONFIG.spawnGain) / 1000;
+}
+
+/* 落下速度。天井を超えたら伸びを鈍らせる。
+   青天井だと一度崩れたときに戻れなくなるので、上ほど緩やかにしている。 */
+function fallSpeed(d){
+  const raw = CONFIG.blockSpeed + d * CONFIG.speedGain;
+  if(raw <= CONFIG.speedSoftCap) return raw;
+  return CONFIG.speedSoftCap + (raw - CONFIG.speedSoftCap) * CONFIG.speedTaper;
+}
+
+function countReds(){
+  let n = 0;
+  for(const b of state.blocks) if(b.kind === "red" && !b.held) n++;
+  return n;
+}
+
+/* --- 当たり判定 ------------------------------------------ */
+function hits(b){
+  const half = CONFIG.playerWidth / 2, py = PLAYER_Y();
+  return b.y + b.h > py && b.y < py + PLAYER_H &&
+         b.x < state.playerX + half && b.x + b.w > state.playerX - half;
+}
+
+/* シールドの範囲。hits() を必ず含むので、シールド中に当たって死ぬことはない。 */
+function shieldHits(b){
+  const r = CONFIG.playerWidth / 2 + CONFIG.shieldExtra, py = PLAYER_Y();
+  return b.y + b.h > py - r && b.y < py + PLAYER_H &&
+         b.x < state.playerX + r && b.x + b.w > state.playerX - r;
+}
+
+/* ヘビやスカラベが赤を片づけたとき、その場所から減速アイテムを落とす。
+   詰まっているときは動けないので、落ちながらこちらへ寄ってくる。
+   盤面を片づけるだけでは速さが変わらず、結局また同じ状況に戻ってしまうため。 */
+function dropRelief(x, y){
+  const w = CONFIG.greenWidth;
+  state.blocks.push({
+    x: Math.max(0, Math.min(W - w, x - w / 2)),
+    y: y,
+    w: w, h: 14,
+    speed: CONFIG.reliefFall,
+    kind: "green",
+    held: false,
+    vx: 0,
+    homing: true,
+  });
+}
+
+/* --- ヘビ：降ってきたばかりの赤（いちばん上）を食べる ---- */
+function releaseSnake(x, y){
+  state.snakes.push({ x:x, y:y, trail:[], left:CONFIG.snakeEats, target:null, leaving:false });
+}
+function pickRed(topmost){
+  let out = null;
+  for(const b of state.blocks){
+    if(b.kind !== "red" || b.held || b.y + b.h < 0) continue;
+    if(!out || (topmost ? b.y < out.y : b.y > out.y)) out = b;
+  }
+  return out;
+}
+function updateSnakes(dt, r){
+  for(let i = state.snakes.length - 1; i >= 0; i--){
+    const s = state.snakes[i];
+    if(!s.leaving && (!s.target || state.blocks.indexOf(s.target) === -1)){
+      s.target = pickRed(true);
+      if(!s.target) s.leaving = true;
+    }
+    const tx = s.leaving ? s.x        : s.target.x + s.target.w / 2;
+    const ty = s.leaving ? s.y - 1000 : s.target.y + s.target.h / 2;
+    const dx = tx - s.x, dy = ty - s.y, dist = Math.hypot(dx, dy) || 1;
+
+    s.x += dx / dist * CONFIG.snakeSpeed * r * dt;
+    s.y += dy / dist * CONFIG.snakeSpeed * r * dt;
+    s.trail.unshift({ x:s.x, y:s.y });
+    if(s.trail.length > CONFIG.snakeLength) s.trail.pop();
+
+    if(!s.leaving && dist < 16){
+      const t = s.target;
+      state.blocks.splice(state.blocks.indexOf(t), 1);
+      dropRelief(t.x + t.w / 2, t.y);          // 食べた場所から減速を落とす
+      s.target = null;
+      if(--s.left <= 0) s.leaving = true;
+    }
+    if(s.leaving && s.y < -90) state.snakes.splice(i, 1);
+  }
+}
+
+/* --- スカラベ：いちばん下の赤を上へ押し返す -------------- */
+function releaseScarab(x, y){
+  state.scarabs.push({ x:x, y:y, target:null, pushing:false });
+}
+function updateScarabs(dt, r){
+  for(let i = state.scarabs.length - 1; i >= 0; i--){
+    const s = state.scarabs[i];
+
+    if(!s.target || state.blocks.indexOf(s.target) === -1){
+      s.target = pickRed(false);
+      s.pushing = false;
+      if(!s.target){                                   // 相手がいなければ上へ帰る
+        s.y -= CONFIG.scarabSpeed * r * dt;
+        if(s.y < -50) state.scarabs.splice(i, 1);
+        continue;
+      }
+    }
+    const t = s.target;
+    if(!s.pushing){
+      const dx = (t.x + t.w / 2) - s.x, dy = (t.y + t.h + 10) - s.y;
+      const d = Math.hypot(dx, dy) || 1;
+      s.x += dx / d * CONFIG.scarabSpeed * r * dt;
+      s.y += dy / d * CONFIG.scarabSpeed * r * dt;
+      if(d < 14){ s.pushing = true; t.held = true; }
+    } else {
+      s.y -= CONFIG.scarabPush * r * dt;
+      s.x  = t.x + t.w / 2;
+      t.y  = s.y - t.h - 6;
+      if(t.y + t.h < 0){
+        state.blocks.splice(state.blocks.indexOf(t), 1);
+        dropRelief(s.x, 0);                    // 捨てた代わりに減速を落として帰る
+        state.scarabs.splice(i, 1);
+      }
+    }
+  }
+}
+
+/* --- 破片 ------------------------------------------------ */
+function shatter(b, spread){
+  for(let k = 0; k < 2; k++){
+    state.debris.push({
+      x: b.x + (k ? b.w / 2 : 0), y: b.y, w: b.w / 2, h: b.h,
+      vx: (k ? 1 : -1) * (40 + Math.random() * spread),
+      vy: -30 - Math.random() * 70,
+      rot: 0, vrot: (Math.random() * 2 - 1) * 4.5, life: 1,
+    });
+  }
+}
+function updateDebris(dt, r){
+  for(let i = state.debris.length - 1; i >= 0; i--){
+    const d = state.debris[i];
+    d.vy  += 430 * dt;
+    d.x   += d.vx * r * dt;
+    d.y   += d.vy * r * dt;
+    d.rot += d.vrot * dt;
+    d.life -= dt * 1.1;
+    if(d.life <= 0 || d.y > H + 50) state.debris.splice(i, 1);
+  }
+}
+
+/* --- リップル削除（スペースキー） ------------------------ */
+function rippleDelete(){
+  if(!state.running || state.rippleCd > 0) return;
+  for(let i = state.blocks.length - 1; i >= 0; i--){
+    const b = state.blocks[i];
+    if(b.kind === "red" || b.kind === "fake"){
+      shatter(b, 170);
+      state.blocks.splice(i, 1);
+    }
+  }
+  state.scarabs.length = 0;
+  state.speedScale = CONFIG.slowFloor;                                     // 一気に最スローへ
+  state.difficulty = Math.max(0, state.difficulty - CONFIG.rippleRewind);  // 難易度を巻き戻す
+  state.sinceItem  = 0;
+  state.rippleCd   = CONFIG.rippleCooldown;
+  state.flash      = 0.35;
+}
+
+/* ==========================================================
+   7. 描画
+   ========================================================== */
+function draw(){
+  paintBackdrop();
+  drawSandHaze();
+
+  for(const b of state.blocks) drawBlock(b);
+  drawDebris();
+  drawSnakes();
+  drawScarabs();
+  drawPlayer(state.playerX);
+  drawCutPips();
+  drawShield();
+  drawSandStreaks();
+  drawPanicEdge();
+  drawPhaseLabel();
+  drawStormWarn();
+  if(state.flash > 0){
+    ctx.fillStyle = "rgba(230,242,255," + (state.flash / 0.35 * 0.38).toFixed(3) + ")";
+    ctx.fillRect(0, 0, W, H);
+  }
+  updateHud();
+}
+
+function drawBlock(b){
+  if(b.kind === "pot")      return drawPot(b.x, b.y, b.w, b.h);
+  if(b.kind === "gem")      return drawGem(b.x, b.y, b.w, b.h);
+  if(b.kind === "scissors") return drawScissors(b.x, b.y, b.w, b.h);
+  if(b.kind === "scarab")   return drawScarab(b.x, b.y, b.w, b.h);
+  if(b.kind === "fake")     return drawFake(b);
+  if(b.homing){                                // お礼の減速。混戦でも見つけられるように光らせる
+    ctx.save();
+    ctx.globalAlpha = 0.30 + 0.28 * Math.sin(performance.now() / 160);
+    ctx.strokeStyle = COLOR.green;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(b.x - 4, b.y - 4, b.w + 8, b.h + 8);
+    ctx.restore();
+  }
+  ctx.fillStyle = b.kind === "green" ? COLOR.green : COLOR.red;
+  ctx.fillRect(b.x, b.y, b.w, b.h);
+  ctx.fillStyle = b.kind === "green" ? COLOR.greenTop : COLOR.redTop;
+  ctx.fillRect(b.x, b.y, b.w, 2);
+}
+
+function drawFake(b){
+  ctx.save();
+  ctx.globalAlpha = 0.38;
+  ctx.fillStyle = COLOR.red;
+  ctx.fillRect(b.x, b.y, b.w, b.h);
+  ctx.restore();
+  ctx.save();
+  ctx.setLineDash([4, 3]);
+  ctx.strokeStyle = COLOR.redTop; ctx.lineWidth = 1;
+  ctx.strokeRect(b.x + .5, b.y + .5, b.w - 1, b.h - 1);
+  ctx.restore();
+}
+
+function drawDebris(){
+  for(const d of state.debris){
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, d.life));
+    ctx.translate(d.x + d.w / 2, d.y + d.h / 2);
+    ctx.rotate(d.rot);
+    ctx.fillStyle = COLOR.red;
+    ctx.fillRect(-d.w / 2, -d.h / 2, d.w, d.h);
+    ctx.restore();
+  }
+}
+
+function drawPot(x, y, w, h){
+  const cx = x + w / 2;
+  ctx.fillStyle = COLOR.pot;
+  ctx.beginPath();
+  ctx.moveTo(cx - w * 0.22, y + h * 0.22);
+  ctx.lineTo(cx + w * 0.22, y + h * 0.22);
+  ctx.bezierCurveTo(cx + w * 0.64, y + h * 0.42, cx + w * 0.52, y + h, cx, y + h);
+  ctx.bezierCurveTo(cx - w * 0.52, y + h, cx - w * 0.64, y + h * 0.42, cx - w * 0.22, y + h * 0.22);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = COLOR.potRim;
+  ctx.fillRect(x + w * 0.16, y + h * 0.04, w * 0.68, h * 0.18);
+  ctx.strokeStyle = COLOR.potDark; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx - w * 0.40, y + h * 0.60); ctx.lineTo(cx + w * 0.40, y + h * 0.60);
+  ctx.stroke();
+}
+
+function drawGem(x, y, w, h){
+  const cx = x + w / 2, sh = y + h * 0.30;
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.24, y);
+  ctx.lineTo(x + w * 0.76, y);
+  ctx.lineTo(x + w, sh);
+  ctx.lineTo(cx, y + h);
+  ctx.lineTo(x, sh);
+  ctx.closePath();
+  ctx.fillStyle = COLOR.gemFill; ctx.fill();
+  ctx.strokeStyle = COLOR.gem; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x, sh); ctx.lineTo(x + w, sh);
+  ctx.moveTo(x + w * 0.24, y); ctx.lineTo(cx, y + h);
+  ctx.moveTo(x + w * 0.76, y); ctx.lineTo(cx, y + h);
+  ctx.strokeStyle = COLOR.gemLine; ctx.lineWidth = 1; ctx.stroke();
+}
+
+function drawScissors(x, y, w, h){
+  ctx.strokeStyle = COLOR.steel; ctx.lineCap = "round"; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.16, y + h * 0.04); ctx.lineTo(x + w * 0.82, y + h * 0.70);
+  ctx.moveTo(x + w * 0.84, y + h * 0.04); ctx.lineTo(x + w * 0.18, y + h * 0.70);
+  ctx.stroke();
+  ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(x + w * 0.28, y + h * 0.84, w * 0.14, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x + w * 0.72, y + h * 0.84, w * 0.14, 0, Math.PI * 2); ctx.stroke();
+}
+
+function drawScarab(x, y, w, h){
+  const cx = x + w / 2, cy = y + h / 2;
+  ctx.strokeStyle = COLOR.scarabEdge; ctx.lineWidth = 1.3; ctx.lineCap = "round";
+  ctx.beginPath();
+  for(const s of [-1, 1]){
+    for(let i = 0; i < 3; i++){
+      const yy = y + h * (0.30 + i * 0.20);
+      ctx.moveTo(cx + s * w * 0.26, yy);
+      ctx.lineTo(cx + s * w * 0.50, yy - h * 0.12);
+    }
+  }
+  ctx.stroke();
+  ctx.fillStyle = COLOR.scarab;
+  ctx.beginPath(); ctx.ellipse(cx, cy + h * 0.08, w * 0.30, h * 0.38, 0, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(cx, y + h * 0.16, w * 0.21, h * 0.14, 0, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, cy - h * 0.28); ctx.lineTo(cx, cy + h * 0.44); ctx.stroke();
+}
+
+function drawSnakes(){
+  for(const s of state.snakes){
+    for(let i = s.trail.length - 1; i >= 0; i--){
+      const p = s.trail[i], t = 1 - i / s.trail.length;
+      ctx.fillStyle = (i % 4 < 2) ? COLOR.snake : COLOR.snakeDark;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 2 + t * 4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = COLOR.snake;
+    ctx.beginPath(); ctx.arc(s.x, s.y, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = COLOR.eye;
+    ctx.beginPath(); ctx.arc(s.x - 2.6, s.y - 2, 1.4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s.x + 2.6, s.y - 2, 1.4, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function drawScarabs(){
+  for(const s of state.scarabs) drawScarab(s.x - 12, s.y - 11, 24, 22);
+}
+
+function drawPlayer(x){
+  const half = CONFIG.playerWidth / 2;
+  ctx.fillStyle = COLOR.cyan;
+  ctx.fillRect(x - half, PLAYER_Y(), CONFIG.playerWidth, PLAYER_H);
+  ctx.beginPath();
+  ctx.moveTo(x - 6, PLAYER_Y());
+  ctx.lineTo(x + 6, PLAYER_Y());
+  ctx.lineTo(x, PLAYER_Y() - 8);
+  ctx.closePath(); ctx.fill();
+}
+
+/* 時間帯が変わったとき、その名前を数秒だけ出す。ここまで来た印。 */
+function drawPhaseLabel(){
+  if(state.phaseLabel <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, state.phaseLabel / 0.9);
+  ctx.textAlign = "center";
+  ctx.fillStyle = COLOR.ink;
+  ctx.font = '800 27px "M PLUS 1p", sans-serif';
+  ctx.fillText(PHASES[state.phase].label, W / 2, H * 0.29);
+  ctx.fillStyle = COLOR.dim;
+  ctx.font = '700 11px "JetBrains Mono", monospace';
+  ctx.fillText(toTimecode(state.phaseAt), W / 2, H * 0.29 + 20);
+  ctx.restore();
+}
+
+/* 追い詰められていて、かつリップルが使えるときだけ画面のふちを光らせる。
+   視線は中央にあるので、周辺視野で「逃げ道がある」と分かるようにする。 */
+function drawPanicEdge(){
+  if(state.rippleCd > 0 || state.redCount < CONFIG.pressureReds) return;
+  const pulse = 0.30 + 0.30 * Math.sin(performance.now() / 170);
+  ctx.strokeStyle = "rgba(240,180,41," + pulse.toFixed(3) + ")";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(1.5, 1.5, W - 3, H - 3);
+}
+
+/* 再生ヘッドの真上に、ハサミの残り本数を小さく出す。
+   遊んでいる最中の目線は画面の中にあるので、下のチップだけだと読めないため。 */
+function drawCutPips(){
+  if(state.scissors <= 0) return;
+  const gap = 9, y = PLAYER_Y() - 16;
+  const x0  = state.playerX - (state.scissors - 1) * gap / 2;
+  ctx.strokeStyle = COLOR.steel;
+  ctx.lineWidth = 1.7;
+  ctx.lineCap = "round";
+  for(let i = 0; i < state.scissors; i++){
+    const x = x0 + i * gap;
+    ctx.beginPath();
+    ctx.moveTo(x - 3, y - 3); ctx.lineTo(x + 3, y + 3);
+    ctx.moveTo(x + 3, y - 3); ctx.lineTo(x - 3, y + 3);
+    ctx.stroke();
+  }
+}
+
+function drawShield(){
+  if(state.shield <= 0) return;
+  if(state.shield < 1.2 && Math.floor(state.shield * 5) % 2 === 0) return;
+  const r = CONFIG.playerWidth / 2 + CONFIG.shieldExtra;
+  ctx.beginPath();
+  ctx.arc(state.playerX, PLAYER_Y(), r, Math.PI, 0);
+  ctx.closePath();
+  ctx.fillStyle = COLOR.shieldFill; ctx.fill();
+  ctx.strokeStyle = COLOR.shieldEdge; ctx.lineWidth = 2; ctx.stroke();
+}
+
+/* ==========================================================
+   8. 背景 ─ エジプトの砂漠（動かないので1枚だけ描いて使い回す）
+   ========================================================== */
+function seeded(seed){
+  let s = seed >>> 0;
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+}
+
+/* 時間帯。上から順に 35秒ごとへ進み、最後まで行ったら夕暮れに戻る。
+   scrim は明るい時間帯だけ薄く暗幕をかける値。赤いクリップが空に埋もれないように。 */
+const PHASES = [
+  { label:"夕暮れ",
+    sky:["#141a33","#2b2242","#6b3c3b","#b06a3c"],
+    dune:["#6b4433","#4a2e24","#2b1a17"],
+    veg:["#3f3025","#241d17","#150f0d"],
+    pyr:["#7d5238","#54341f"], water:["#37707a","#12303a"],
+    stars:0.35, scrim:0, orb:{ y:0.575, r:0.050, c:"#ffcf92", glow:"255,196,124", a:0.50 } },
+
+  { label:"日没",
+    sky:["#101528","#39213c","#8b3b2e","#e0763a"],
+    dune:["#7a4530","#4f2b20","#2c1714"],
+    veg:["#422e21","#251a13","#150e0b"],
+    pyr:["#8d5a37","#5c351d"], water:["#3d6d72","#132c34"],
+    stars:0.55, scrim:0, orb:{ y:0.632, r:0.058, c:"#ffd9a0", glow:"255,170,90", a:0.68 } },
+
+  { label:"宵",
+    sky:["#0a0f24","#16193a","#2c2a52","#4a3a55"],
+    dune:["#463a44","#2e2732","#191520"],
+    veg:["#26212c","#17141c","#0c0a10"],
+    pyr:["#54465c","#332c3c"], water:["#26506a","#0d2230"],
+    stars:0.80, scrim:0, orb:{ y:0.420, r:0.040, c:"#e2e8ff", glow:"190,205,250", a:0.22 } },
+
+  { label:"夜",
+    sky:["#04060f","#0b0f26","#161c3c","#262c50"],
+    dune:["#2a2b3e","#1c1c2b","#10101c"],
+    veg:["#191a26","#101018","#08080d"],
+    pyr:["#36374e","#202034"], water:["#183753","#081824"],
+    stars:1.00, scrim:0, orb:{ y:0.200, r:0.046, c:"#eef2ff", glow:"205,220,255", a:0.28 } },
+
+  { label:"薄明",
+    sky:["#0c1230","#1d2350","#43355f","#7c5670"],
+    dune:["#3b3448","#282331","#17151e"],
+    veg:["#221f2b","#15131a","#0b0a0e"],
+    pyr:["#4a4159","#2e2939"], water:["#28495e","#0e1f2c"],
+    stars:0.45, scrim:0, orb:{ y:0.190, r:0.034, c:"#dde4f8", glow:"190,205,245", a:0.15 } },
+
+  { label:"夜明け",
+    sky:["#1b2a52","#41467a","#a56d63","#f3a865"],
+    dune:["#8d5c3d","#5e3927","#341f18"],
+    veg:["#4a3527","#2a1e15","#17100c"],
+    pyr:["#b8834f","#6d4326"], water:["#4e8894","#173840"],
+    stars:0.08, scrim:0, orb:{ y:0.645, r:0.052, c:"#fff0c4", glow:"255,222,152", a:0.58 } },
+
+  { label:"朝",
+    sky:["#4a76a8","#7ba0c4","#c4b89c","#e8c893"],
+    dune:["#b4854f","#7d5733","#3d2c1d"],
+    veg:["#5e4a2e","#3a2e1c","#1a140d"],
+    pyr:["#d8ab6e","#96703f"], water:["#5aa0ae","#245663"],
+    stars:0, scrim:0.10, orb:{ y:0.300, r:0.046, c:"#fff6da", glow:"255,240,190", a:0.40 } },
+
+  { label:"昼",
+    sky:["#5b8fc0","#8db4d4","#c3cfcc","#ded2b6"],
+    dune:["#c99c62","#9e7648","#4a3626"],
+    veg:["#6b5a38","#453824","#1e1810"],
+    pyr:["#e3c48f","#aa8550"], water:["#63acb8","#2c6472"],
+    stars:0, scrim:0.18, orb:{ y:0.120, r:0.042, c:"#fffbe8", glow:"255,250,220", a:0.32 } },
+];
+
+function setBackdrop(i, instant){
+  bdPrev = instant ? null : bdCur;
+  const c = document.createElement("canvas");
+  c.width = Math.round(W * dpr); c.height = Math.round(H * dpr);
+  const g = c.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  paintDesert(g, PHASES[i]);
+  bdCur = c;
+  bdFade = instant ? 1 : 0;
+}
+
+/* 時間帯が変わる3秒間だけ、前の空の上に新しい空を重ねていく */
+function paintBackdrop(){
+  if(bdPrev && bdFade < 1){
+    ctx.drawImage(bdPrev, 0, 0, W, H);
+    ctx.globalAlpha = bdFade;
+    ctx.drawImage(bdCur, 0, 0, W, H);
+    ctx.globalAlpha = 1;
+  } else {
+    ctx.drawImage(bdCur, 0, 0, W, H);
+  }
+}
+
+function paintDesert(g, P){
+  const rnd = seeded(20260909);
+
+  const sky = g.createLinearGradient(0, 0, 0, H * 0.62);
+  sky.addColorStop(0,    P.sky[0]);
+  sky.addColorStop(0.40, P.sky[1]);
+  sky.addColorStop(0.72, P.sky[2]);
+  sky.addColorStop(1,    P.sky[3]);
+  g.fillStyle = sky; g.fillRect(0, 0, W, H);
+
+  // 星。夜がいちばん多く、朝焼けではほとんど消える。
+  const n = Math.round(24 + 64 * P.stars);
+  for(let i = 0; i < n; i++){
+    g.globalAlpha = (0.20 + rnd() * 0.55) * P.stars;
+    g.fillStyle = "#fff4de";
+    g.beginPath(); g.arc(rnd() * W, rnd() * H * 0.44, rnd() * 0.9 + 0.3, 0, Math.PI * 2); g.fill();
+  }
+  g.globalAlpha = 1;
+
+  // 太陽か月。低いときは砂丘に半分隠れる。
+  const ox = W * 0.72, oy = H * P.orb.y;
+  const glow = g.createRadialGradient(ox, oy, 2, ox, oy, H * 0.34);
+  glow.addColorStop(0, "rgba(" + P.orb.glow + "," + P.orb.a + ")");
+  glow.addColorStop(1, "rgba(" + P.orb.glow + ",0)");
+  g.fillStyle = glow;
+  g.beginPath(); g.arc(ox, oy, H * 0.34, 0, Math.PI * 2); g.fill();
+  g.fillStyle = P.orb.c;
+  g.beginPath(); g.arc(ox, oy, H * P.orb.r, 0, Math.PI * 2); g.fill();
+
+  // ピラミッド（このあと砂丘に足元を隠される）
+  pyramid(g, W * .30, H * .640, W * .17, H * .120, P.pyr[0], P.pyr[1]);
+  pyramid(g, W * .43, H * .640, W * .12, H * .084, P.pyr[0], P.pyr[1]);
+
+  // 砂丘（奥 → 手前）。手前ほど暗くして、再生ヘッドが沈まないようにする。
+  ridge(g, [[0,.615],[.18,.585],[.38,.625],[.58,.590],[.78,.620],[1,.600]], P.dune[0]);
+  oasis(g, W * .20, H * .672, W * .19, H * .028, P.water);
+  palm (g, W * .11, H * .668, H * .105, P.veg[0]);
+  palm (g, W * .30, H * .670, H * .092, P.veg[0]);
+  tuft (g, W * .25, H * .676, H * .028, P.veg[0]);
+
+  ridge(g, [[0,.700],[.22,.735],[.45,.690],[.68,.730],[.88,.695],[1,.715]], P.dune[1]);
+  oasis(g, W * .68, H * .790, W * .26, H * .040, P.water);
+  palm (g, W * .55, H * .784, H * .140, P.veg[1]);
+  palm (g, W * .82, H * .786, H * .120, P.veg[1]);
+  palm (g, W * .75, H * .780, H * .098, P.veg[1]);
+  tuft (g, W * .60, H * .800, H * .040, P.veg[1]);
+  tuft (g, W * .88, H * .796, H * .034, P.veg[1]);
+  tuft (g, W * .12, H * .746, H * .030, P.veg[1]);
+
+  ridge(g, [[0,.830],[.25,.860],[.52,.820],[.76,.855],[1,.828]], P.dune[2]);
+  oasis(g, W * .16, H * .900, W * .17, H * .030, P.water);
+  palm (g, W * .06, H * .896, H * .115, P.veg[2]);
+  palm (g, W * .27, H * .898, H * .095, P.veg[2]);
+  tuft (g, W * .42, H * .880, H * .034, P.veg[2]);
+  tuft (g, W * .64, H * .900, H * .030, P.veg[2]);
+  tuft (g, W * .90, H * .885, H * .036, P.veg[2]);
+
+  const floor = g.createLinearGradient(0, H * 0.90, 0, H);
+  floor.addColorStop(0, "rgba(8,5,5,0)");
+  floor.addColorStop(1, "rgba(8,5,5,.55)");
+  g.fillStyle = floor; g.fillRect(0, H * 0.90, W, H * 0.10);
+
+  // 明るい時間帯だけ薄い暗幕。赤いクリップの見やすさを保つため。
+  if(P.scrim){
+    g.fillStyle = "rgba(12,9,16," + P.scrim + ")";
+    g.fillRect(0, 0, W, H);
+  }
+}
+
+/* ピラミッド。太陽は右にあるので、右の面が明るい。 */
+function pyramid(g, cx, baseY, w, h, lit, dark){
+  g.fillStyle = dark;
+  g.beginPath();
+  g.moveTo(cx, baseY - h); g.lineTo(cx - w / 2, baseY); g.lineTo(cx, baseY);
+  g.closePath(); g.fill();
+  g.fillStyle = lit;
+  g.beginPath();
+  g.moveTo(cx, baseY - h); g.lineTo(cx + w / 2, baseY); g.lineTo(cx, baseY);
+  g.closePath(); g.fill();
+}
+
+/* なめらかな砂丘の稜線。点のあいだを二次曲線でつなぐ。 */
+function ridge(g, pts, color){
+  g.fillStyle = color;
+  g.beginPath();
+  g.moveTo(0, pts[0][1] * H);
+  for(let i = 0; i < pts.length - 1; i++){
+    const a = pts[i], b = pts[i + 1];
+    g.quadraticCurveTo(a[0] * W, a[1] * H, (a[0] + b[0]) / 2 * W, (a[1] + b[1]) / 2 * H);
+  }
+  g.lineTo(W, pts[pts.length - 1][1] * H);
+  g.lineTo(W, H); g.lineTo(0, H);
+  g.closePath(); g.fill();
+}
+
+function oasis(g, cx, cy, w, h, colors){
+  const water = g.createLinearGradient(0, cy - h / 2, 0, cy + h / 2);
+  water.addColorStop(0, colors[0]);
+  water.addColorStop(1, colors[1]);
+  g.fillStyle = water;
+  g.beginPath(); g.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2); g.fill();
+
+  g.strokeStyle = "rgba(190,230,235,.32)"; g.lineWidth = 1;   // 水面の反射
+  for(let i = 0; i < 3; i++){
+    const yy = cy - h * 0.18 + i * h * 0.20, ww = w * (0.26 - i * 0.06);
+    g.beginPath(); g.moveTo(cx - ww, yy); g.lineTo(cx + ww, yy); g.stroke();
+  }
+  g.strokeStyle = "rgba(0,0,0,.30)"; g.lineWidth = 1.6;       // 湿った砂のふち
+  g.beginPath(); g.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2); g.stroke();
+}
+
+/* ナツメヤシ。曲がった幹に葉を放射状に。 */
+function palm(g, x, baseY, h, color){
+  g.strokeStyle = color; g.lineCap = "round";
+  g.lineWidth = Math.max(1.6, h * 0.055);
+  g.beginPath();
+  g.moveTo(x, baseY);
+  g.quadraticCurveTo(x + h * 0.10, baseY - h * 0.55, x + h * 0.17, baseY - h);
+  g.stroke();
+
+  const tx = x + h * 0.17, ty = baseY - h;
+  g.lineWidth = Math.max(1.3, h * 0.042);
+  const fronds = [[-1,-.55],[-1,.10],[1,-.55],[1,.10],[-.30,-1],[.40,-.95]];
+  for(const [dx, dy] of fronds){
+    g.beginPath();
+    g.moveTo(tx, ty);
+    g.quadraticCurveTo(tx + dx * h * 0.32, ty + dy * h * 0.30,
+                       tx + dx * h * 0.50, ty + dy * h * 0.10 + h * 0.17);
+    g.stroke();
+  }
+}
+
+/* 草むら */
+function tuft(g, x, baseY, h, color){
+  g.strokeStyle = color; g.lineWidth = 1.4; g.lineCap = "round";
+  for(let i = -2; i <= 2; i++){
+    g.beginPath();
+    g.moveTo(x, baseY);
+    g.quadraticCurveTo(x + i * h * 0.18, baseY - h * 0.60,
+                       x + i * h * 0.46, baseY - h * (0.72 - Math.abs(i) * 0.10));
+    g.stroke();
+  }
+}
+
+/* ==========================================================
+   9. タイトル画面と HUD
+   ========================================================== */
+function drawTitle(){
+  paintBackdrop();
+  drawPlayer(W / 2);
+
+  const y1 = H / 2 - 52, y2 = H / 2 - 18;
+  legend(W / 2 - 120, y1, "red",      "よける");
+  legend(W / 2 -  22, y1, "green",    "減速");
+  legend(W / 2 +  64, y1, "pot",      "ヘビ");
+  legend(W / 2 - 134, y2, "gem",      "シールド");
+  legend(W / 2 -  34, y2, "scarab",   "押し返す");
+  legend(W / 2 +  66, y2, "scissors", "カット");
+
+  ctx.fillStyle = COLOR.ink;
+  ctx.font = '700 13px "M PLUS 1p", sans-serif';
+  ctx.textAlign = "center";
+  ctx.fillText("スタートを押す", W / 2, H / 2 + 30);
+}
+
+function legend(x, y, kind, label){
+  const cw = (kind === "red" || kind === "green") ? 34 : 24;
+  if(kind === "red" || kind === "green"){
+    ctx.fillStyle = kind === "green" ? COLOR.green : COLOR.red;
+    ctx.fillRect(x, y, cw, 14);
+    ctx.fillStyle = kind === "green" ? COLOR.greenTop : COLOR.redTop;
+    ctx.fillRect(x, y, cw, 2);
+  }
+  else if(kind === "pot")    drawPot(x, y - 8, cw, 26);
+  else if(kind === "gem")    drawGem(x, y - 6, cw, 24);
+  else if(kind === "scarab")   drawScarab(x, y - 5, cw, 22);
+  else if(kind === "scissors") drawScissors(x, y - 6, cw, 24);
+
+  ctx.fillStyle = COLOR.ink;
+  ctx.font = '700 12px "M PLUS 1p", sans-serif';
+  ctx.textAlign = "left";
+  ctx.fillText(label, x + cw + 8, y + 12);
+  ctx.textAlign = "center";
+}
+
+function updateHud(){
+  const r  = rate();
+  const el = document.getElementById("rate");
+  el.textContent = "×" + r.toFixed(2);
+  el.classList.toggle("slow", r < 0.995);
+
+  document.getElementById("time").textContent = toTimecode(state.elapsed);
+
+  const sh = document.getElementById("chipShield");
+  sh.hidden = state.shield <= 0;
+  sh.classList.toggle("on-shield", !sh.hidden);
+  if(!sh.hidden) document.getElementById("shieldVal").textContent = state.shield.toFixed(1);
+
+  const cut = document.getElementById("chipCut");
+  cut.hidden = state.scissors <= 0;
+  cut.classList.toggle("on-cut", state.scissors > 0);
+  if(!cut.hidden) document.getElementById("cutVal").textContent = state.scissors;
+
+  const rip = document.getElementById("chipRipple");
+  const ready = state.rippleCd <= 0;
+  document.getElementById("rippleVal").textContent = ready ? "READY" : state.rippleCd.toFixed(0) + "s";
+  rip.classList.toggle("on-ripple", ready);
+}
+
+/* ==========================================================
+   10. 開始と終了
+   ========================================================== */
+const btn = document.getElementById("btn");
+
+function start(){
+  hideVeils();
+  Object.assign(state, {
+    running:true, blocks:[], snakes:[], scarabs:[], debris:[],
+    playerX:W / 2, elapsed:0, difficulty:0, sinceItem:0, redCount:0,
+    speedScale:1, shield:0, scissors:0, rippleCd:0, flash:0,
+    phase:0, phaseLabel:0, phaseAt:0,
+    storm:0, stormWarn:0, stormNext:CONFIG.stormEvery, wind:0, sand:[],
+  });
+  setBackdrop(0, true);
+  state.startTime = state.lastTime = performance.now();
+  state.spawnTimer = 0.4;
+  btn.textContent = "リセット";
+  requestAnimationFrame(loop);
+}
+
+function gameOver(){
+  state.running = false;
+  btn.textContent = "もう一度";
+  if(state.elapsed > best){
+    best = state.elapsed;
+    localStorage.setItem("dodgeBest", String(best));
+    document.getElementById("best").textContent = toTimecode(best);
+  }
+  draw();          // 最後の1枚を残して、その上に選択画面をかぶせる
+  showOver();
+  submitScore(state.elapsed);
+}
+
+/* スマホにはキーボードがないので、タップでも撃てるようにする。
+   押したあとフォーカスを外しておかないと、スペースキーが二重に効く。 */
+document.getElementById("chipRipple").addEventListener("click", e => {
+  rippleDelete();
+  e.currentTarget.blur();
+});
+
+btn.addEventListener("click", () => {
+  if(state.running){
+    state.running = false;
+    hideVeils();
+    Object.assign(state, { elapsed:0, difficulty:0, sinceItem:0, redCount:0,
+                           speedScale:1, shield:0, scissors:0, rippleCd:0,
+                           phase:0, phaseLabel:0, phaseAt:0,
+                           storm:0, stormWarn:0, stormNext:CONFIG.stormEvery,
+                           wind:0, sand:[] });
+    setBackdrop(0, true);
+    btn.textContent = "スタート";
+    updateHud();
+    drawTitle();
+  } else start();
+});
+
+/* 秒数を 00:00:00:00（時:分:秒:フレーム）に。30fps 換算。 */
+function toTimecode(sec){
+  const p = n => String(n).padStart(2, "0");
+  return p(Math.floor(sec / 3600)) + ":" + p(Math.floor(sec / 60) % 60) + ":" +
+         p(Math.floor(sec) % 60)   + ":" + p(Math.floor(sec * 30) % 30);
+}
+
+/* ==========================================================
+   11. 試作ギミックの on/off ─ チェックは次に開いても残る
+   ========================================================== */
+const LAB = { drift:false, fake:false, long:false };
+for(const key of Object.keys(LAB)){
+  const el = document.getElementById("t-" + key);
+  LAB[key] = localStorage.getItem("lab-" + key) === "1";
+  if(!el) continue;                       // 公開版にはチェックボックスが無い
+  el.checked = LAB[key];
+  el.addEventListener("change", () => {
+    LAB[key] = el.checked;
+    localStorage.setItem("lab-" + key, el.checked ? "1" : "0");
+  });
+}
+
+/* ==========================================================
+   12. 順位表 ─ 遊び終わったらその場で送って、その場で順位を出す
+   ========================================================== */
+const LEADERBOARD = {
+  endpoint: "",   // ← Google Apps Script のURLをここに入れる。空なら順位表を出さない。
+  top: 10,
+  minSec: 5,      // これ未満は送らない（誤操作を弾く）
+};
+
+const overView = document.getElementById("overView");
+const rankView = document.getElementById("rankView");
+const overTc   = document.getElementById("overTc");
+const overRank = document.getElementById("overRank");
+const overMsg  = document.getElementById("overMsg");
+const rankList = document.getElementById("rankList");
+const rankNote = document.getElementById("rankNote");
+const nameEl   = document.getElementById("playerName");
+
+let lastBoard = null;                    // 直近に受け取った順位表
+
+function myName(){
+  const v = (nameEl.value || "").trim();
+  return v || "ななし";
+}
+
+function showOver(){
+  overTc.textContent   = toTimecode(state.elapsed);
+  overMsg.textContent  = "";
+  overRank.textContent = LEADERBOARD.endpoint ? "記録を送っています…" : "";
+  rankView.hidden = true;
+  overView.hidden = false;
+}
+function hideVeils(){ overView.hidden = true; rankView.hidden = true; }
+
+/* 送信。Apps Script は CORS を返さないので投げっぱなしにする。
+   Content-Type を text/plain にしているのは、事前確認の通信を起こさないため。 */
+function submitScore(sec){
+  if(!LEADERBOARD.endpoint) return;
+  if(sec < LEADERBOARD.minSec){
+    overRank.textContent = "記録は" + LEADERBOARD.minSec + "秒から登録されます";
+    return;
+  }
+  fetch(LEADERBOARD.endpoint, {
+    method:  "POST",
+    mode:    "no-cors",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body:    JSON.stringify({ name: myName(), sec: Math.round(sec * 100) / 100 }),
+  }).then(() => setTimeout(loadBoard, 1500))
+    .catch(() => { overRank.textContent = "記録を送れませんでした"; });
+}
+
+/* 読み込み。こちらも CORS を避けて、script タグで受け取る昔ながらのやり方。 */
+let jsonpSeq = 0;
+function loadBoard(){
+  if(!LEADERBOARD.endpoint) return;
+  const cb  = "lbcb" + (++jsonpSeq);
+  const tag = document.createElement("script");
+  const timer = setTimeout(() => { done(); fail(); }, 9000);
+
+  function done(){ clearTimeout(timer); delete window[cb]; tag.remove(); }
+  function fail(){
+    overRank.textContent = "順位を取れませんでした";
+    rankNote.textContent = "読み込めませんでした。通信を確認して、もう一度開いてください。";
+  }
+
+  window[cb] = data => { done(); lastBoard = data; renderRank(data); };
+  tag.onerror = () => { done(); fail(); };
+  tag.src = LEADERBOARD.endpoint + "?callback=" + cb +
+            "&top="  + LEADERBOARD.top +
+            "&name=" + encodeURIComponent(myName()) +
+            "&_="    + Date.now();
+  document.body.appendChild(tag);
+}
+
+function renderRank(data){
+  const rows   = (data && data.list) || [];
+  const you    = data && data.you;
+  const people = (data && data.players) || rows.length;
+  const plays  = (data && data.plays)   || rows.length;
+
+  // ゲームオーバー画面の一行。終わった瞬間にここで順位が分かる。
+  overRank.textContent = "";
+  if(you && you.rank){
+    overRank.append(document.createTextNode(people + "人中 "));
+    const b = document.createElement("b");
+    b.textContent = you.rank + "位";
+    overRank.append(b);
+  } else if(people){
+    overRank.textContent = people + "人が挑戦中";
+  }
+
+  // ランキング画面
+  rankList.textContent = "";
+  if(!rows.length){
+    rankNote.textContent = "まだ誰も記録を出していません。最初のひとりです。";
+    return;
+  }
+  const mine = myName();
+  rows.forEach((r, i) => rankList.appendChild(rankRow(i + 1, r.name, r.sec, r.name === mine)));
+
+  // 自分が上位に入っていなければ、間を空けて下に自分を足す
+  if(you && you.rank && you.rank > rows.length){
+    const gap = document.createElement("li");
+    gap.className = "gap"; gap.textContent = "…";
+    rankList.appendChild(gap);
+    rankList.appendChild(rankRow(you.rank, mine, you.sec, true));
+  }
+  rankNote.textContent = people + "人 / " + plays + "回プレイ";
+}
+
+function rankRow(rank, name, sec, isMe){
+  const li = document.createElement("li");
+  if(isMe) li.className = "me";
+  const a = document.createElement("span"); a.className = "rank"; a.textContent = rank + ".";
+  const b = document.createElement("span"); b.className = "who";  b.textContent = name;
+  const c = document.createElement("span"); c.className = "tc";   c.textContent = toTimecode(sec);
+  li.append(a, b, c);
+  return li;
+}
+
+/* 結果のコピー。自分のURLも一緒に入れるので、貼れば相手がそのまま遊べる。 */
+function resultText(){
+  const you  = lastBoard && lastBoard.you;
+  const rank = (you && you.rank) ? "（" + lastBoard.players + "人中 " + you.rank + "位）" : "";
+  return "よけゲー " + toTimecode(state.elapsed) + rank + "\n" + location.href;
+}
+
+async function copyResult(){
+  const text = resultText();
+  try {
+    await navigator.clipboard.writeText(text);
+    overMsg.textContent = "コピーしました";
+    return;
+  } catch(err){ /* 使えない環境があるので下の方法を試す */ }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    overMsg.textContent = ok ? "コピーしました" : "コピーできませんでした";
+  } catch(err){
+    overMsg.textContent = "コピーできませんでした";
+  }
+}
+
+document.getElementById("actRetry").addEventListener("click", () => { hideVeils(); start(); });
+document.getElementById("actCopy").addEventListener("click", copyResult);
+document.getElementById("actRank").addEventListener("click", () => {
+  overView.hidden = true;
+  rankView.hidden = false;
+  if(!lastBoard){ rankNote.textContent = "読み込み中…"; loadBoard(); }
+});
+document.getElementById("rankBack").addEventListener("click", () => {
+  rankView.hidden = true;
+  overView.hidden = false;
+});
+
+nameEl.value = localStorage.getItem("dodgeName") || "";
+nameEl.addEventListener("change", () => localStorage.setItem("dodgeName", nameEl.value.trim()));
+
+// 順位表の行き先が無いときは、ランキングのボタンごと出さない
+if(!LEADERBOARD.endpoint) document.getElementById("actRank").hidden = true;
+
+/* 起動 */
+document.getElementById("best").textContent = toTimecode(best);
+updateHud();
+resize();
+if(document.fonts) document.fonts.ready.then(() => { if(!state.running) drawTitle(); });
+</script>
+</body>
+</html>
