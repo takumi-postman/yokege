@@ -1585,8 +1585,28 @@ document.getElementById("rankBack").addEventListener("click", () => {
   overView.hidden = false;
 });
 
-nameEl.value = localStorage.getItem("dodgeName") || "";
-nameEl.addEventListener("change", () => localStorage.setItem("dodgeName", nameEl.value.trim()));
+/* 初めて開いた人に、かぶりにくい名前を最初から割り当てておく。
+   何も入力しない人が全員「ななし」に合流して、順位表が1行に潰れるのを防ぐため。 */
+const NAME_WORDS = ["旅人","隊商","神官","石工","星読み","月の民","砂の民","ラクダ",
+                    "スカラベ","ヘビ使い","水守り","日読み","夜警","案内人","墓守","王の使い"];
+function freshName(){
+  const w = NAME_WORDS[Math.floor(Math.random() * NAME_WORDS.length)];
+  return w + (1000 + Math.floor(Math.random() * 9000));   // 約14万通り
+}
+
+let savedName = "";
+try {
+  savedName = localStorage.getItem("dodgeName") || "";
+  if(!savedName){ savedName = freshName(); localStorage.setItem("dodgeName", savedName); }
+} catch(err){ savedName = freshName(); }
+nameEl.value = savedName;
+
+nameEl.addEventListener("change", () => {
+  let v = nameEl.value.trim();
+  if(!v) v = freshName();              // 空にされたら、また別の名前を割り当てる
+  nameEl.value = v;
+  try { localStorage.setItem("dodgeName", v); } catch(err){}
+});
 
 // 順位表の行き先が無いときは、ランキングのボタンごと出さない
 if(!LEADERBOARD.endpoint) document.getElementById("actRank").hidden = true;
