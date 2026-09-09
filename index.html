@@ -111,6 +111,15 @@
   .act--primary{color:#101318; background:var(--cyan); border-color:var(--cyan)}
   .act:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
 
+  .veil--start{
+    background:transparent;          /* 後ろのアイテム一覧を隠さない */
+    justify-content:flex-end;
+    padding-bottom:24px;
+    pointer-events:none;             /* キャンバスの操作を邪魔しない */
+  }
+  .veil--start .act{pointer-events:auto}
+  .act--big{font-size:15px; padding:11px 30px}
+
   .veil--rank{justify-content:flex-start; gap:8px}
   .rank__list{
     list-style:none; margin:0; padding:0; width:100%; max-width:330px;
@@ -155,6 +164,10 @@
 
   <div class="stage">
     <canvas id="cv"></canvas>
+
+    <div class="veil veil--start" id="startView" hidden>
+      <button type="button" class="act act--primary act--big" id="actStart">ゲームスタート</button>
+    </div>
 
     <div class="veil" id="overView" hidden>
       <p class="veil__title">当たった</p>
@@ -1278,10 +1291,6 @@ function drawTitle(){
   legend(W / 2 -  34, y2, "scarab",   "押し返す");
   legend(W / 2 +  66, y2, "scissors", "カット");
 
-  ctx.fillStyle = COLOR.ink;
-  ctx.font = '700 13px "M PLUS 1p", sans-serif';
-  ctx.textAlign = "center";
-  ctx.fillText("スタートを押す", W / 2, H / 2 + 30);
 }
 
 function legend(x, y, kind, label){
@@ -1335,6 +1344,7 @@ const btn = document.getElementById("btn");
 
 function start(){
   hideVeils();
+  btn.hidden = false;
   Object.assign(state, {
     running:true, blocks:[], snakes:[], scarabs:[], debris:[],
     playerX:W / 2, elapsed:0, difficulty:0, sinceItem:0, redCount:0,
@@ -1369,21 +1379,25 @@ document.getElementById("chipRipple").addEventListener("click", e => {
   e.currentTarget.blur();
 });
 
-btn.addEventListener("click", () => {
-  if(state.running){
-    state.running = false;
-    hideVeils();
-    Object.assign(state, { elapsed:0, difficulty:0, sinceItem:0, redCount:0,
-                           speedScale:1, shield:0, scissors:0, rippleCd:0,
-                           phase:0, phaseLabel:0, phaseAt:0,
-                           storm:0, stormWarn:0, stormNext:CONFIG.stormEvery,
-                           wind:0, sand:[] });
-    setBackdrop(0, true);
-    btn.textContent = "スタート";
-    updateHud();
-    drawTitle();
-  } else start();
-});
+/* タイトル画面に戻る。
+   1回死んだ人が、どんなアイテムがあったか見直してから入り直せるように、
+   「もう一度」はここへ戻す（いきなり始めない）。 */
+function showStart(){
+  state.running = false;
+  Object.assign(state, { elapsed:0, difficulty:0, sinceItem:0, redCount:0,
+                         speedScale:1, shield:0, scissors:0, rippleCd:0, flash:0,
+                         phase:0, phaseLabel:0, phaseAt:0,
+                         storm:0, stormWarn:0, stormNext:CONFIG.stormEvery,
+                         wind:0, sand:[], blocks:[], snakes:[], scarabs:[], debris:[] });
+  setBackdrop(0, true);
+  hideVeils();
+  startView.hidden = false;
+  btn.hidden = true;
+  updateHud();
+  drawTitle();
+}
+
+btn.addEventListener("click", showStart);   // 遊んでいる最中の「リセット」専用
 
 /* 秒数を 00:00:00:00（時:分:秒:フレーム）に。30fps 換算。 */
 function toTimecode(sec){
@@ -1416,6 +1430,7 @@ const LEADERBOARD = {
   minSec: 5,      // これ未満は送らない（誤操作を弾く）
 };
 
+const startView = document.getElementById("startView");
 const overView = document.getElementById("overView");
 const rankView = document.getElementById("rankView");
 const overTc   = document.getElementById("overTc");
@@ -1438,8 +1453,9 @@ function showOver(){
   overRank.textContent = LEADERBOARD.endpoint ? "記録を送っています…" : "";
   rankView.hidden = true;
   overView.hidden = false;
+  btn.hidden = true;
 }
-function hideVeils(){ overView.hidden = true; rankView.hidden = true; }
+function hideVeils(){ startView.hidden = true; overView.hidden = true; rankView.hidden = true; }
 
 /* 送信。Apps Script は CORS を返さないので投げっぱなしにする。
    Content-Type を text/plain にしているのは、事前確認の通信を起こさないため。 */
@@ -1556,7 +1572,8 @@ async function copyResult(){
   }
 }
 
-document.getElementById("actRetry").addEventListener("click", () => { hideVeils(); start(); });
+document.getElementById("actRetry").addEventListener("click", showStart);
+document.getElementById("actStart").addEventListener("click", start);
 document.getElementById("actCopy").addEventListener("click", copyResult);
 document.getElementById("actRank").addEventListener("click", () => {
   overView.hidden = true;
@@ -1578,6 +1595,7 @@ if(!LEADERBOARD.endpoint) document.getElementById("actRank").hidden = true;
 document.getElementById("best").textContent = toTimecode(best);
 updateHud();
 resize();
+showStart();
 if(document.fonts) document.fonts.ready.then(() => { if(!state.running) drawTitle(); });
 </script>
 </body>
