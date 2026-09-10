@@ -418,8 +418,9 @@ function update(dt, now){
   state.sinceItem  += dt;
   state.redCount    = countReds();
 
-  // 時間帯を進める。35秒ごとに切り替わって、8つで一周して戻ってくる。
-  const p = Math.floor(state.elapsed / CONFIG.phaseEvery) % PHASES.length;
+  // 場面を進める。周回ではなく、旅として前へ進む。最後まで行ったらそこで留まる。
+  let p = 0;
+  for(let i = 0; i < SCENES.length; i++) if(state.elapsed >= SCENES[i].at) p = i;
   if(p !== state.phase){
     state.phase = p; state.phaseAt = state.elapsed; state.phaseLabel = 3.0;
     setBackdrop(p, false);
@@ -1011,7 +1012,7 @@ function drawPhaseLabel(){
   ctx.textAlign = "center";
   ctx.fillStyle = COLOR.ink;
   ctx.font = '800 27px "M PLUS 1p", sans-serif';
-  ctx.fillText(PHASES[state.phase].label, W / 2, H * 0.29);
+  ctx.fillText(SCENES[state.phase].label, W / 2, H * 0.29);
   ctx.fillStyle = COLOR.dim;
   ctx.font = '700 11px "JetBrains Mono", monospace';
   ctx.fillText(toTimecode(state.phaseAt), W / 2, H * 0.29 + 20);
@@ -1130,13 +1131,27 @@ const PHASES = [
     stars:0, scrim:0.18, orb:{ y:0.120, r:0.042, c:"#fffbe8", glow:"255,250,220", a:0.32 } },
 ];
 
+/* 場面の並び。旅の順番そのもの。
+   夕暮れに歩き出して、夜がいちばん深いところで遺跡に潜り、抜けると夜明けが待っている。 */
+const SCENES = [
+  { at:   0, label:"夕暮れ",   paint:g => paintDesert(g, PHASES[0]) },
+  { at:  35, label:"日没",     paint:g => paintDesert(g, PHASES[1]) },
+  { at:  70, label:"宵",       paint:g => paintDesert(g, PHASES[2]) },
+  { at: 105, label:"夜",       paint:g => paintDesert(g, PHASES[3]) },
+  { at: 140, label:"古代遺跡", paint:paintRuins },
+  { at: 210, label:"薄明",     paint:g => paintDesert(g, PHASES[4]) },
+  { at: 245, label:"夜明け",   paint:g => paintDesert(g, PHASES[5]) },
+  { at: 280, label:"朝",       paint:g => paintDesert(g, PHASES[6]) },
+  { at: 315, label:"昼",       paint:g => paintDesert(g, PHASES[7]) },
+];
+
 function setBackdrop(i, instant){
   bdPrev = instant ? null : bdCur;
   const c = document.createElement("canvas");
   c.width = Math.round(W * dpr); c.height = Math.round(H * dpr);
   const g = c.getContext("2d");
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  paintDesert(g, PHASES[i]);
+  SCENES[i].paint(g);
   bdCur = c;
   bdFade = instant ? 1 : 0;
 }
@@ -1220,6 +1235,106 @@ function paintDesert(g, P){
     g.fillStyle = "rgba(12,9,16," + P.scrim + ")";
     g.fillRect(0, 0, W, H);
   }
+}
+
+/* 古代遺跡の内部。夜のいちばん深い時間に潜る場所。
+   松明の灯りだけが光源なので、落ちてくるものが埋もれないよう中央は暗く保つ。 */
+function paintRuins(g){
+  const rnd = seeded(19911224);
+
+  // 奥の壁
+  const wall = g.createLinearGradient(0, 0, 0, H);
+  wall.addColorStop(0,    "#16110d");
+  wall.addColorStop(0.55, "#241b14");
+  wall.addColorStop(1,    "#2c2118");
+  g.fillStyle = wall; g.fillRect(0, 0, W, H);
+
+  // 奥へ続く通路。かすかに明るいので、奥行きが出る。
+  const door = g.createLinearGradient(0, H * 0.30, 0, H * 0.86);
+  door.addColorStop(0, "#3b2c1d");
+  door.addColorStop(1, "#191108");
+  g.fillStyle = door;
+  g.beginPath();
+  g.moveTo(W * 0.40, H * 0.86);
+  g.lineTo(W * 0.40, H * 0.40);
+  g.quadraticCurveTo(W * 0.50, H * 0.26, W * 0.60, H * 0.40);
+  g.lineTo(W * 0.60, H * 0.86);
+  g.closePath(); g.fill();
+
+  // 壁の象形文字。四角と棒を並べただけだが、遠目には碑文に見える。
+  g.fillStyle = "#3f2f1f";
+  for(let row = 0; row < 5; row++){
+    const y = H * (0.20 + row * 0.085);
+    for(let x = W * 0.04; x < W * 0.36; x += 13){
+      if(rnd() < 0.30) continue;
+      const h = 4 + rnd() * 5;
+      g.fillRect(x, y, 4 + rnd() * 4, h);
+    }
+    for(let x = W * 0.64; x < W * 0.96; x += 13){
+      if(rnd() < 0.30) continue;
+      const h = 4 + rnd() * 5;
+      g.fillRect(x, y, 4 + rnd() * 4, h);
+    }
+  }
+
+  // 石柱。手前ほど明るく太い。
+  column(g, W * 0.14, W * 0.085, "#42311f", "#241a10");
+  column(g, W * 0.86, W * 0.085, "#42311f", "#241a10");
+  column(g, W * 0.02, W * 0.070, "#33261a", "#1c140d");
+  column(g, W * 0.98, W * 0.070, "#33261a", "#1c140d");
+
+  // 松明
+  torch(g, W * 0.14, H * 0.34);
+  torch(g, W * 0.86, H * 0.34);
+
+  // 床
+  const floor = g.createLinearGradient(0, H * 0.86, 0, H);
+  floor.addColorStop(0, "#20180f");
+  floor.addColorStop(1, "#0d0906");
+  g.fillStyle = floor; g.fillRect(0, H * 0.86, W, H * 0.14);
+  g.strokeStyle = "rgba(90,66,38,.5)"; g.lineWidth = 1;
+  for(let i = 1; i < 5; i++){
+    const x = W * i / 5;
+    g.beginPath(); g.moveTo(x, H * 0.86); g.lineTo(x + (x - W / 2) * 0.28, H); g.stroke();
+  }
+  g.beginPath(); g.moveTo(0, H * 0.86 + .5); g.lineTo(W, H * 0.86 + .5); g.stroke();
+}
+
+/* 石柱ひとつ。上下に台輪を付けるだけで神殿らしくなる。 */
+function column(g, cx, w, lit, dark){
+  g.fillStyle = dark;
+  g.fillRect(cx - w / 2, 0, w, H * 0.88);
+  g.fillStyle = lit;                                    // 光が当たっている側
+  g.fillRect(cx - w / 2, 0, w * 0.42, H * 0.88);
+  g.fillStyle = lit;                                    // 柱頭と台座
+  g.fillRect(cx - w * 0.62, H * 0.12, w * 1.24, H * 0.045);
+  g.fillRect(cx - w * 0.62, H * 0.80, w * 1.24, H * 0.050);
+  g.fillStyle = "rgba(0,0,0,.30)";                      // 溝
+  for(let i = -1; i <= 1; i++) g.fillRect(cx + i * w * 0.24, H * 0.165, 1.5, H * 0.635);
+}
+
+/* 松明。炎そのものより、周りに落ちる灯りのほうが効く。 */
+function torch(g, x, y){
+  const glow = g.createRadialGradient(x, y, 2, x, y, H * 0.30);
+  glow.addColorStop(0, "rgba(255,170,70,.34)");
+  glow.addColorStop(1, "rgba(255,170,70,0)");
+  g.fillStyle = glow;
+  g.beginPath(); g.arc(x, y, H * 0.30, 0, Math.PI * 2); g.fill();
+
+  g.fillStyle = "#3a2a18";                              // 受け皿
+  g.fillRect(x - 5, y + 6, 10, 9);
+  g.fillStyle = "#ffb454";                              // 炎
+  g.beginPath();
+  g.moveTo(x, y - 13);
+  g.quadraticCurveTo(x + 7, y + 1, x, y + 7);
+  g.quadraticCurveTo(x - 7, y + 1, x, y - 13);
+  g.closePath(); g.fill();
+  g.fillStyle = "#ffe6a8";
+  g.beginPath();
+  g.moveTo(x, y - 7);
+  g.quadraticCurveTo(x + 3.4, y + 1, x, y + 5);
+  g.quadraticCurveTo(x - 3.4, y + 1, x, y - 7);
+  g.closePath(); g.fill();
 }
 
 /* ピラミッド。太陽は右にあるので、右の面が明るい。 */
@@ -1468,11 +1583,11 @@ const TITLES = [
   { at:  35, name:"日没越え" },
   { at:  70, name:"宵越え" },
   { at: 105, name:"夜越え" },
-  { at: 140, name:"薄明越え" },
-  { at: 175, name:"夜明けを見た者" },
-  { at: 210, name:"朝越え" },
-  { at: 245, name:"昼越え" },
-  { at: 280, name:"砂漠の主" },
+  { at: 140, name:"遺跡に入りし者" },
+  { at: 210, name:"遺跡を抜けし者" },
+  { at: 245, name:"夜明けを見た者" },
+  { at: 280, name:"朝を迎えし者" },
+  { at: 315, name:"砂漠の主" },
 ];
 
 function titleFor(sec){
