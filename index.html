@@ -1277,15 +1277,17 @@ function paintRuins(g){
     }
   }
 
-  // 石柱。手前ほど明るく太い。
-  column(g, W * 0.14, W * 0.085, "#42311f", "#241a10");
-  column(g, W * 0.86, W * 0.085, "#42311f", "#241a10");
-  column(g, W * 0.02, W * 0.070, "#33261a", "#1c140d");
-  column(g, W * 0.98, W * 0.070, "#33261a", "#1c140d");
+  // 石柱は端に寄せて、通路の脇をアヌビス像に譲る
+  column(g, W * 0.07, W * 0.075, "#42311f", "#241a10");
+  column(g, W * 0.93, W * 0.075, "#42311f", "#241a10");
 
-  // 松明
-  torch(g, W * 0.14, H * 0.34);
-  torch(g, W * 0.86, H * 0.34);
+  // 松明。像の顔に灯りが当たる高さに置く。
+  torch(g, W * 0.07, H * 0.34);
+  torch(g, W * 0.93, H * 0.34);
+
+  // 通路を挟んで向かい合うアヌビス像
+  anubis(g, W * 0.25, H * 0.86, H * 0.40,  1);
+  anubis(g, W * 0.75, H * 0.86, H * 0.40, -1);
 
   // 床
   const floor = g.createLinearGradient(0, H * 0.86, 0, H);
@@ -1311,6 +1313,79 @@ function column(g, cx, w, lit, dark){
   g.fillRect(cx - w * 0.62, H * 0.80, w * 1.24, H * 0.050);
   g.fillStyle = "rgba(0,0,0,.30)";                      // 溝
   for(let i = -1; i <= 1; i++) g.fillRect(cx + i * w * 0.24, H * 0.165, 1.5, H * 0.635);
+}
+
+/* アヌビス像。台座に伏せたジャッカル。
+   dir が +1 なら右を向く。左右で向かい合わせて、奥の通路を挟ませる。
+   小さく描いても分かるように、尖った耳と長い鼻面のシルエットだけで見せる。 */
+function anubis(g, cx, baseY, h, dir){
+  const D = "#241b14", L = "#45341f", GOLD = "#c9a44a";
+  g.save();
+  g.translate(cx, baseY);
+  g.scale(dir, 1);
+
+  // 台座
+  g.fillStyle = D;
+  g.fillRect(-0.42 * h, -0.30 * h, 0.84 * h, 0.30 * h);
+  g.fillStyle = L;                                  // 松明側の面だけ明るい
+  g.fillRect(-0.42 * h, -0.30 * h, 0.13 * h, 0.30 * h);
+  g.fillStyle = D;
+  g.fillRect(-0.46 * h, -0.34 * h, 0.92 * h, 0.045 * h);   // 上の台輪
+  g.fillRect(-0.46 * h, -0.06 * h, 0.92 * h, 0.045 * h);   // 下の台輪
+
+  // 伏せた胴。背から尻へ流れる線が、犬が寝そべっている形を作る。
+  g.beginPath();
+  g.moveTo(-0.40 * h, -0.34 * h);
+  g.lineTo( 0.30 * h, -0.34 * h);
+  g.lineTo( 0.30 * h, -0.45 * h);
+  g.quadraticCurveTo(0.30 * h, -0.57 * h, 0.20 * h, -0.60 * h);
+  g.lineTo(-0.18 * h, -0.57 * h);
+  g.quadraticCurveTo(-0.38 * h, -0.55 * h, -0.40 * h, -0.34 * h);
+  g.closePath();
+  g.fillStyle = D; g.fill();
+  g.strokeStyle = L; g.lineWidth = 1.6; g.stroke();   // 松明の当たる縁
+
+  // 前脚
+  g.fillStyle = D;
+  g.fillRect(0.20 * h, -0.40 * h, 0.22 * h, 0.06 * h);
+
+  // 首
+  g.beginPath();
+  g.moveTo( 0.09 * h, -0.55 * h);
+  g.lineTo( 0.25 * h, -0.55 * h);
+  g.lineTo( 0.29 * h, -0.86 * h);
+  g.lineTo( 0.13 * h, -0.86 * h);
+  g.closePath();
+  g.fill(); g.stroke();
+
+  // 長い鼻面
+  g.beginPath();
+  g.moveTo( 0.13 * h, -0.87 * h);
+  g.lineTo( 0.30 * h, -0.91 * h);
+  g.lineTo( 0.53 * h, -0.87 * h);
+  g.lineTo( 0.53 * h, -0.81 * h);
+  g.lineTo( 0.27 * h, -0.78 * h);
+  g.closePath();
+  g.fill(); g.stroke();
+
+  // 尖った耳。ここがいちばんアヌビスらしさを決める。
+  for(const off of [0.00, 0.11]){
+    g.beginPath();
+    g.moveTo(0.12 * h + off * h, -0.85 * h);
+    g.lineTo(0.09 * h + off * h, -1.07 * h);
+    g.lineTo(0.20 * h + off * h, -0.88 * h);
+    g.closePath();
+    g.fill(); g.stroke();
+  }
+
+  // 首飾りと、灯りを受けた目
+  g.fillStyle = GOLD;
+  g.fillRect(0.10 * h, -0.60 * h, 0.18 * h, 0.045 * h);
+  g.beginPath();
+  g.arc(0.33 * h, -0.855 * h, 0.019 * h, 0, Math.PI * 2);
+  g.fill();
+
+  g.restore();
 }
 
 /* 松明。炎そのものより、周りに落ちる灯りのほうが効く。 */
