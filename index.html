@@ -1319,12 +1319,15 @@ function column(g, cx, w, lit, dark){
    dir が +1 なら右を向く。左右で向かい合わせて、奥の通路を挟ませる。
    小さく描いても分かるように、尖った耳と長い鼻面のシルエットだけで見せる。 */
 function anubis(g, cx, baseY, h, dir){
-  const D = "#241b14", L = "#45341f", GOLD = "#c9a44a";
+  // 壁より明るい石にする。同じ暗さだと輪郭しか見えず、像が消える。
+  const D = "#3f3020", L = "#6d5231", GOLD = "#dcb75f";
   g.save();
   g.translate(cx, baseY);
   g.scale(dir, 1);
 
   // 台座
+  g.fillStyle = "rgba(0,0,0,.35)";                   // 足元の影で床から浮かせない
+  g.fillRect(-0.50 * h, -0.02 * h, 1.00 * h, 0.03 * h);
   g.fillStyle = D;
   g.fillRect(-0.42 * h, -0.30 * h, 0.84 * h, 0.30 * h);
   g.fillStyle = L;                                  // 松明側の面だけ明るい
@@ -1343,7 +1346,7 @@ function anubis(g, cx, baseY, h, dir){
   g.quadraticCurveTo(-0.38 * h, -0.55 * h, -0.40 * h, -0.34 * h);
   g.closePath();
   g.fillStyle = D; g.fill();
-  g.strokeStyle = L; g.lineWidth = 1.6; g.stroke();   // 松明の当たる縁
+  g.strokeStyle = L; g.lineWidth = 2; g.stroke();     // 松明の当たる縁
 
   // 前脚
   g.fillStyle = D;
@@ -1360,20 +1363,20 @@ function anubis(g, cx, baseY, h, dir){
 
   // 長い鼻面
   g.beginPath();
-  g.moveTo( 0.13 * h, -0.87 * h);
-  g.lineTo( 0.30 * h, -0.91 * h);
-  g.lineTo( 0.53 * h, -0.87 * h);
-  g.lineTo( 0.53 * h, -0.81 * h);
-  g.lineTo( 0.27 * h, -0.78 * h);
+  g.moveTo( 0.12 * h, -0.88 * h);
+  g.lineTo( 0.32 * h, -0.93 * h);
+  g.lineTo( 0.58 * h, -0.88 * h);
+  g.lineTo( 0.58 * h, -0.80 * h);
+  g.lineTo( 0.27 * h, -0.77 * h);
   g.closePath();
   g.fill(); g.stroke();
 
   // 尖った耳。ここがいちばんアヌビスらしさを決める。
-  for(const off of [0.00, 0.11]){
+  for(const off of [0.00, 0.12]){
     g.beginPath();
-    g.moveTo(0.12 * h + off * h, -0.85 * h);
-    g.lineTo(0.09 * h + off * h, -1.07 * h);
-    g.lineTo(0.20 * h + off * h, -0.88 * h);
+    g.moveTo(0.11 * h + off * h, -0.86 * h);
+    g.lineTo(0.07 * h + off * h, -1.12 * h);
+    g.lineTo(0.21 * h + off * h, -0.89 * h);
     g.closePath();
     g.fill(); g.stroke();
   }
@@ -1382,7 +1385,7 @@ function anubis(g, cx, baseY, h, dir){
   g.fillStyle = GOLD;
   g.fillRect(0.10 * h, -0.60 * h, 0.18 * h, 0.045 * h);
   g.beginPath();
-  g.arc(0.33 * h, -0.855 * h, 0.019 * h, 0, Math.PI * 2);
+  g.arc(0.35 * h, -0.860 * h, 0.023 * h, 0, Math.PI * 2);
   g.fill();
 
   g.restore();
