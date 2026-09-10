@@ -1281,15 +1281,7 @@ function paintRuins(g){
   column(g, W * 0.07, W * 0.075, "#42311f", "#241a10");
   column(g, W * 0.93, W * 0.075, "#42311f", "#241a10");
 
-  // 松明。像の顔に灯りが当たる高さに置く。
-  torch(g, W * 0.07, H * 0.34);
-  torch(g, W * 0.93, H * 0.34);
-
-  // 通路を挟んで向かい合うアヌビス像
-  anubis(g, W * 0.25, H * 0.86, H * 0.40,  1);
-  anubis(g, W * 0.75, H * 0.86, H * 0.40, -1);
-
-  // 床
+  // 床。像がこの上に立つので、先に敷いておく。
   const floor = g.createLinearGradient(0, H * 0.86, 0, H);
   floor.addColorStop(0, "#20180f");
   floor.addColorStop(1, "#0d0906");
@@ -1300,6 +1292,16 @@ function paintRuins(g){
     g.beginPath(); g.moveTo(x, H * 0.86); g.lineTo(x + (x - W / 2) * 0.28, H); g.stroke();
   }
   g.beginPath(); g.moveTo(0, H * 0.86 + .5); g.lineTo(W, H * 0.86 + .5); g.stroke();
+
+  // 通路を挟んで向かい合うアヌビス像。門番なので、画面からはみ出るくらい大きく。
+  // 幅でも上限をかけているのは、狭い画面で2体がぶつかって通路を塞ぎきらないため。
+  const ah = Math.min(H * 0.60, W * 0.52);
+  anubis(g, W * 0.22, H * 0.87, ah,  1);
+  anubis(g, W * 0.78, H * 0.87, ah, -1);
+
+  // 松明は最後。灯りが柱にも像にも落ちる。
+  torch(g, W * 0.07, H * 0.34);
+  torch(g, W * 0.93, H * 0.34);
 }
 
 /* 石柱ひとつ。上下に台輪を付けるだけで神殿らしくなる。 */
