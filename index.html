@@ -1884,12 +1884,16 @@ nameEl.addEventListener("change", () => {
 // 順位表の行き先が無いときは、ランキングのボタンごと出さない
 if(!LEADERBOARD.endpoint) document.getElementById("actRank").hidden = true;
 
-/* 撮影用。URL に ?rec を付けたときだけ、場面の切り替わりを15秒ごとに詰める。
-   紹介の映像を撮るのに、遺跡や夜明けまで何分も待たなくて済むように。
+/* 撮影用。URL に ?rec を付けると、狙った場面が15秒後に来るように時間を詰める。
+   ひとつ手前の場面から始まるので、切り替わる瞬間をそのまま撮れる。
+   ?rec だけなら古代遺跡（4番）。?rec=6 なら夜明け、というふうに番号で選べる。
    付けなければ通常どおりなので、公開中のゲームには影響しない。 */
-if(new URLSearchParams(location.search).has("rec")){
-  SCENES.forEach((sc, i) => { sc.at = i * 15; });
-  TITLES.forEach((t,  i) => { t.at  = i * 15; });
+const recArg = new URLSearchParams(location.search).get("rec");
+if(recArg !== null){
+  const target = Math.min(SCENES.length - 1, Math.max(1, Number(recArg) || 4));
+  const shift  = (i) => (i - (target - 1)) * 15;          // 手前の場面が0秒、狙いが15秒
+  SCENES.forEach((sc, i) => { sc.at = shift(i); });
+  TITLES.forEach((t,  i) => { t.at  = shift(i); });
 }
 
 /* 起動 */
