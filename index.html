@@ -82,13 +82,23 @@
     position:absolute; inset:0; z-index:2;
     background:rgba(10,8,13,.90);
     display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:10px; padding:16px 14px; text-align:center;
+    gap:7px; padding:14px; text-align:center;
   }
   .veil__title{margin:0; font-size:26px; font-weight:800; letter-spacing:.03em}
   .veil__tc{
     margin:0; font-family:var(--mono); font-size:19px; font-weight:700;
     color:var(--amber); font-variant-numeric:tabular-nums; letter-spacing:.03em;
   }
+  .veil__ttl{
+    margin:0; font-size:17px; font-weight:800; color:var(--cyan); letter-spacing:.03em;
+  }
+  .veil__next{margin:0; font-size:12px; color:var(--ink-3)}
+  .veil__next b{color:var(--amber); font-weight:700}
+  .veil__best{
+    margin:0 0 4px; font-size:12px; color:var(--ink-2); font-family:var(--mono);
+    text-shadow:0 1px 4px rgba(0,0,0,.9);
+  }
+  .veil__best b{color:var(--cyan); font-weight:700; font-family:var(--sans)}
   .veil__rank{margin:0; font-size:13px; color:var(--ink-2); min-height:1.6em}
   .veil__rank b{color:var(--ink); font-size:16px; font-weight:800}
   .veil__msg{margin:0; font-size:11px; color:var(--ink-3); font-family:var(--mono); min-height:1.4em}
@@ -127,8 +137,11 @@
     overflow-y:auto; overflow-x:hidden; flex:1; min-height:0;
   }
   .rank__list li{
-    display:grid; grid-template-columns:2.4em 1fr auto; align-items:baseline; gap:8px;
+    display:grid; grid-template-columns:2.4em 1fr auto; align-items:center; gap:8px;
     background:var(--sunk); padding:6px 10px; font-size:13px; text-align:left;
+  }
+  .rank__list .who small{
+    display:block; font-size:10.5px; line-height:1.35; color:var(--ink-3);
   }
   .rank__list li.me{background:#1d2a2b}
   .rank__list li.gap{justify-items:center; grid-template-columns:1fr; color:var(--ink-3)}
@@ -166,12 +179,15 @@
     <canvas id="cv"></canvas>
 
     <div class="veil veil--start" id="startView" hidden>
+      <p class="veil__best" id="startBest"></p>
       <button type="button" class="act act--primary act--big" id="actStart">ゲームスタート</button>
     </div>
 
     <div class="veil" id="overView" hidden>
       <p class="veil__title">当たった</p>
       <p class="veil__tc" id="overTc">00:00:00:00</p>
+      <p class="veil__ttl" id="overTitle"></p>
+      <p class="veil__next" id="overNext"></p>
       <p class="veil__rank" id="overRank"></p>
       <div class="veil__acts">
         <button type="button" class="act act--primary" id="actRetry">もう一度</button>
@@ -999,6 +1015,11 @@ function drawPhaseLabel(){
   ctx.fillStyle = COLOR.dim;
   ctx.font = '700 11px "JetBrains Mono", monospace';
   ctx.fillText(toTimecode(state.phaseAt), W / 2, H * 0.29 + 20);
+  if(state.phaseAt <= TITLES[TITLES.length - 1].at){      // 一周するまでは称号も更新される
+    ctx.fillStyle = COLOR.cyan;
+    ctx.font = '800 14px "M PLUS 1p", sans-serif';
+    ctx.fillText(titleFor(state.phaseAt), W / 2, H * 0.29 + 44);
+  }
   ctx.restore();
 }
 
@@ -1391,6 +1412,15 @@ function showStart(){
                          wind:0, sand:[], blocks:[], snakes:[], scarabs:[], debris:[] });
   setBackdrop(0, true);
   hideVeils();
+  startBest.textContent = "";
+  if(best > 0){
+    startBest.append(document.createTextNode("自己ベスト " + toTimecode(best) + "　"));
+    const b = document.createElement("b");
+    b.textContent = titleFor(best);
+    startBest.append(b);
+  } else {
+    startBest.textContent = "赤をよけて、どこまで生き延びられるか";
+  }
   startView.hidden = false;
   btn.hidden = true;
   updateHud();
@@ -1431,9 +1461,40 @@ const LEADERBOARD = {
 };
 
 const startView = document.getElementById("startView");
+/* 称号。生き延びた秒数で決まる。区切りは時間帯の変わり目（35秒ごと）と同じにしてあるので、
+   「どこまで見たか」がそのまま称号になる。280秒＝砂漠の一日を一周。 */
+const TITLES = [
+  { at:   0, name:"砂を踏む者" },
+  { at:  35, name:"日没越え" },
+  { at:  70, name:"宵越え" },
+  { at: 105, name:"夜越え" },
+  { at: 140, name:"薄明越え" },
+  { at: 175, name:"夜明けを見た者" },
+  { at: 210, name:"朝越え" },
+  { at: 245, name:"昼越え" },
+  { at: 280, name:"砂漠の主" },
+];
+
+function titleFor(sec){
+  let t = TITLES[0];
+  for(const x of TITLES) if(sec >= x.at) t = x;
+  return t.name;
+}
+function nextTitle(sec){
+  for(const x of TITLES) if(sec < x.at) return { name:x.name, left:x.at - sec };
+  return null;                                   // すべて到達済み
+}
+function shortLeft(sec){
+  const n = Math.ceil(sec);
+  return n < 60 ? n + "秒" : Math.floor(n / 60) + "分" + String(n % 60).padStart(2, "0") + "秒";
+}
+
 const overView = document.getElementById("overView");
 const rankView = document.getElementById("rankView");
-const overTc   = document.getElementById("overTc");
+const overTc    = document.getElementById("overTc");
+const overTitle = document.getElementById("overTitle");
+const overNext  = document.getElementById("overNext");
+const startBest = document.getElementById("startBest");
 const overRank = document.getElementById("overRank");
 const overMsg  = document.getElementById("overMsg");
 const rankList = document.getElementById("rankList");
@@ -1448,7 +1509,21 @@ function myName(){
 }
 
 function showOver(){
-  overTc.textContent   = toTimecode(state.elapsed);
+  overTc.textContent    = toTimecode(state.elapsed);
+  overTitle.textContent = titleFor(state.elapsed);
+
+  // 次の称号までの距離。ここが「もう一回」を押させる一番の理由になる。
+  const nx = nextTitle(state.elapsed);
+  overNext.textContent = "";
+  if(nx){
+    overNext.append(document.createTextNode("あと "));
+    const b = document.createElement("b");
+    b.textContent = shortLeft(nx.left);
+    overNext.append(b, document.createTextNode(" で「" + nx.name + "」"));
+  } else {
+    overNext.textContent = "すべての称号に到達";
+  }
+
   overMsg.textContent  = "";
   overRank.textContent = LEADERBOARD.endpoint ? "記録を送っています…" : "";
   rankView.hidden = true;
@@ -1537,7 +1612,10 @@ function rankRow(rank, name, sec, isMe){
   const li = document.createElement("li");
   if(isMe) li.className = "me";
   const a = document.createElement("span"); a.className = "rank"; a.textContent = rank + ".";
-  const b = document.createElement("span"); b.className = "who";  b.textContent = name;
+  const b = document.createElement("span"); b.className = "who";
+  b.append(document.createTextNode(name));
+  const t = document.createElement("small"); t.textContent = titleFor(sec);
+  b.append(t);
   const c = document.createElement("span"); c.className = "tc";   c.textContent = toTimecode(sec);
   li.append(a, b, c);
   return li;
