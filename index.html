@@ -1884,6 +1884,14 @@ nameEl.addEventListener("change", () => {
 // 順位表の行き先が無いときは、ランキングのボタンごと出さない
 if(!LEADERBOARD.endpoint) document.getElementById("actRank").hidden = true;
 
+/* 撮影用。URL に ?rec を付けたときだけ、場面の切り替わりを15秒ごとに詰める。
+   紹介の映像を撮るのに、遺跡や夜明けまで何分も待たなくて済むように。
+   付けなければ通常どおりなので、公開中のゲームには影響しない。 */
+if(new URLSearchParams(location.search).has("rec")){
+  SCENES.forEach((sc, i) => { sc.at = i * 15; });
+  TITLES.forEach((t,  i) => { t.at  = i * 15; });
+}
+
 /* 起動 */
 document.getElementById("best").textContent = toTimecode(best);
 updateHud();
