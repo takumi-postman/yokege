@@ -307,13 +307,13 @@ const CONFIG = {
 
   // --- 遺跡の崩落 ---
   quakeEvery:   24,     // 崩落と崩落のあいだの秒数
-  quakeWarn:   2.2,     // 揺れはじめ（予告）の秒数
+  quakeWarn:   2.8,     // 揺れはじめ（予告）の秒数。読んで動く時間を含む
   quakeTime:    10,     // 崩れ続ける秒数
   rubbleEvery: 0.40,    // 崩落中、何秒ごとに石が落ちるか
 
   // --- 砂嵐 ---
   stormEvery:   45,     // 嵐が終わってから、次の予兆までの秒数
-  stormWarn:   2.5,     // 吹きはじめ（予告）の秒数
+  stormWarn:   3.0,     // 吹きはじめ（予告）の秒数。読んで構える時間を含む
   stormTime:    18,     // 嵐が続く秒数
   windMin:      60,     // 横に流される速さ
   windMax:     115,
@@ -472,7 +472,7 @@ function update(dt, now){
     SFX.scene();
   }
   if(state.phaseLabel > 0) state.phaseLabel -= dt;
-  if(bdFade < 1) bdFade = Math.min(1, bdFade + dt / 3.6);   // ゆっくり溶かす
+  if(bdFade < 1) bdFade = Math.min(1, bdFade + dt / 6.0);   // 空も風景の色も6秒かけて溶かす
 
   updateStorm(dt);
   updateQuake(dt, r, state.difficulty);
@@ -661,8 +661,13 @@ function drawSandStreaks(){
 
 /* 危ないものが来る合図。何が来るかを字で、来ること自体を赤で伝える。 */
 function drawAlert(){
-  const label = state.quakeWarn > 0 ? "崩 落" : (state.stormWarn > 0 ? "砂 嵐" : null);
-  if(!label) return;
+  // 予兆のあいだと、始まった直後しばらくは出しておく。読んで動く時間が要るため。
+  const quaking = state.quakeWarn > 0 || (state.quake > CONFIG.quakeTime - 2.0);
+  const blowing = state.stormWarn > 0 || (state.storm > CONFIG.stormTime - 2.0);
+  const A = quaking ? { label:"崩 落", hint:"落ちてくる石を避けろ" }
+          : blowing ? { label:"砂 嵐", hint:"風に流される　踏ん張れ" } : null;
+  if(!A) return;
+  const label = A.label;
   const pulse = 0.45 + 0.55 * Math.abs(Math.sin(performance.now() / 105));
 
   ctx.save();
@@ -680,6 +685,10 @@ function drawAlert(){
   const half = ctx.measureText(label).width / 2;   // 両脇に警告マーク
   warnMark(W / 2 - half - 34, H * 0.415, 17);
   warnMark(W / 2 + half + 34, H * 0.415, 17);
+
+  ctx.fillStyle = "#ffd9d4";                       // 何をすればいいかを一行で
+  ctx.font = '700 14px "M PLUS 1p", sans-serif';
+  ctx.fillText(A.hint, W / 2, H * 0.44 + 26);
   ctx.restore();
 }
 
@@ -1394,7 +1403,9 @@ function spawnProp(){
 /* 目印。場面が変わる少し前に地平線へ置く。
    遠くて大きいものは近づくのが遅く見えるので、進みを半分にしてある。 */
 function spawnLandmark(){
-  return { kind:"pyramid", z:0, x:0.5 + (Math.random() * 0.3 - 0.15), big:4.2, slow:0.42 };
+  return { kind:"pyramid", z:0, x:0.5, big:4.2, slow:0.42,
+           dir: Math.random() < 0.5 ? -1 : 1,   // どちら側へ外れていくか
+           exit: 1.8 };                          // 画面の外へ抜けきるまで消さない
 }
 
 function updateProps(step){
@@ -1410,7 +1421,9 @@ function updateProps(step){
   for(let i = state.props.length - 1; i >= 0; i--){
     const o = state.props[i];
     o.z += step * CONFIG.travelSpeed * (o.slow || 1) * (o.rush || 1);
-    if(o.z > 1.08) state.props.splice(i, 1);
+    // 目印は、近づくにつれて中央から横へ逸れていく。真正面のまま消えると驚くので。
+    if(o.dir) o.x = 0.5 + o.dir * 0.30 * o.z * o.z;
+    if(o.z > (o.exit || 1.08)) state.props.splice(i, 1);
   }
   state.propTimer -= step * CONFIG.travelSpeed;
   if(state.propTimer <= 0){
@@ -1439,9 +1452,13 @@ function drawProps(P){
 
   for(const o of list){
     if(RUIN_KINDS[o.kind]) continue;              // 石柱と像は drawRuinProps が描く
-    const p  = Math.max(0, Math.min(1.1, o.z));
+    const p  = Math.max(0, Math.min(o.exit || 1.1, o.z));
     const y  = top + span * p * p;
     const sc = (0.08 + p * 1.9) * (o.big || 1);
+    const fade = p > 1 ? Math.max(0, 1 - (p - 1) / 0.75) : 1;   // 抜けぎわに薄くなる
+    if(fade <= 0) continue;
+    ctx.save();
+    ctx.globalAlpha = fade;
     const x  = W / 2 + (o.x - 0.5) * W * (0.20 + p * 2.4);
     const col = depthColor(P.veg, p);                // 手前ほど暗く、段差なく
 
@@ -1462,6 +1479,7 @@ function drawProps(P){
     } else if(o.kind === "pyramid"){
       pyramid(ctx, x, y, W * 0.11 * sc, H * 0.11 * sc, P.pyr[0], P.pyr[1]);
     }
+    ctx.restore();
   }
 }
 
