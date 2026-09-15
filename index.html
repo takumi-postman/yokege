@@ -987,9 +987,9 @@ function drawBossZone(){
       g.addColorStop(0.5, "#ecfbff");
       g.addColorStop(1,   "rgba(150,215,255,0)");
       ctx.fillStyle = g; ctx.fillRect(z.x, 0, z.w, H);
-      ctx.globalAlpha = 0.55 * (1 - q * 0.35);
-      ctx.fillStyle = "#7fd4ff";
-      ctx.fillRect(z.x - z.w * 0.6, 0, z.w * 2.2, H);
+      ctx.globalAlpha = 0.20 * (1 - q * 0.35);       // 外側の光は控えめに。
+      ctx.fillStyle = "#7fd4ff";                       // 当たる範囲より広く光ると嘘になる。
+      ctx.fillRect(z.x - z.w * 0.35, 0, z.w * 1.7, H);
 
     } else if(B.kind === "bomb"){                      // 着弾して膨らむ
       const cx = z.x + z.w / 2, r = z.w * (0.35 + q * 0.95);
