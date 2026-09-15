@@ -758,8 +758,8 @@ function warnMark(x, y, r){
    構え → 一撃 → 間合い、を繰り返す。当たる場所は必ず先に赤で見せる。
    技は複数持たせて、同じものが3回続かないようにしてある。 */
 const BOSS_DEF = {
-  anubis: { at:  68, rise:2.2, attacks:5, moves:["slam","sweep","pillars"] },
-  sphinx: { at: 112, rise:2.4, attacks:4, moves:["laser","bomb"] },
+  anubis: { at:  68, rise:2.2, attacks:[4, 6], moves:["slam","sweep","pillars"] },
+  sphinx: { at: 112, rise:2.4, attacks:[3, 5], moves:["laser","bomb"] },
 };
 
 function updateBoss(dt){
@@ -768,7 +768,8 @@ function updateBoss(dt){
   const def = BOSS_DEF[want];
 
   if(!state.boss && state.elapsed >= def.at){
-    state.boss = { who:want, t:0, mode:"rise", left:def.attacks,
+    const [lo, hi] = def.attacks;                    // 何回で崩れるかも毎回変える
+    state.boss = { who:want, t:0, mode:"rise", left:lo + Math.floor(Math.random() * (hi - lo + 1)),
                    combo:0, kind:def.moves[0], last:null, run:0, x:W/2, side:1, spots:[] };
     SFX.rumble();
     return;
