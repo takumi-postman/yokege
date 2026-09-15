@@ -152,6 +152,13 @@
   }
   .rank__list li:nth-child(1) .rank{color:var(--amber)}
   .rank__list .who{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .rank__list .grade{
+    font-family:var(--mono); font-weight:700; font-size:12px; margin-right:7px;
+    color:var(--ink-3);
+  }
+  .rank__list .grade.s{color:var(--amber)}
+  .rank__list .grade.a{color:var(--cyan)}
+  .rank__list .grade.b{color:var(--green)}
   .rank__list .tc{font-family:var(--mono); font-size:12px; font-variant-numeric:tabular-nums}
 
   .lab{
@@ -3499,27 +3506,40 @@ function renderRank(data){
     return;
   }
   const mine = myName();
-  rows.forEach((r, i) => rankList.appendChild(rankRow(i + 1, r.name, r.sec, r.name === mine)));
+  rows.forEach((r, i) => rankList.appendChild(rankRow(i + 1, r, r.name === mine)));
 
   // 自分が上位に入っていなければ、間を空けて下に自分を足す
   if(you && you.rank && you.rank > rows.length){
     const gap = document.createElement("li");
     gap.className = "gap"; gap.textContent = "…";
     rankList.appendChild(gap);
-    rankList.appendChild(rankRow(you.rank, mine, you.sec, true));
+    rankList.appendChild(rankRow(you.rank, { name:mine, sec:you.sec,
+                                             lives:you.lives, cleared:you.cleared }, true));
   }
   rankNote.textContent = people + "人 / " + plays + "回プレイ";
 }
 
-function rankRow(rank, name, sec, isMe){
+/* 踏破した人は段位、まだの人は今までどおり称号。
+   全員が踏破すると時間の差しか残らないので、残機を順位の軸にしてある。 */
+function gradeOf(r){
+  if(r && r.cleared && Number(r.lives) >= 1){
+    const k = RANKS.find(x => Number(r.lives) >= x.min) || RANKS[RANKS.length - 1];
+    return { tag:k.rank, cls:k.rank.toLowerCase(), note:k.note };
+  }
+  return { tag:"–", cls:"", note: titleFor(r ? r.sec : 0) };
+}
+
+function rankRow(rank, r, isMe){
   const li = document.createElement("li");
   if(isMe) li.className = "me";
+  const g = gradeOf(r);
   const a = document.createElement("span"); a.className = "rank"; a.textContent = rank + ".";
   const b = document.createElement("span"); b.className = "who";
-  b.append(document.createTextNode(name));
-  const t = document.createElement("small"); t.textContent = titleFor(sec);
+  const gr = document.createElement("span"); gr.className = "grade " + g.cls; gr.textContent = g.tag;
+  b.append(gr, document.createTextNode(r.name));
+  const t = document.createElement("small"); t.textContent = g.note;
   b.append(t);
-  const c = document.createElement("span"); c.className = "tc";   c.textContent = toTimecode(sec);
+  const c = document.createElement("span"); c.className = "tc";   c.textContent = toTimecode(r.sec);
   li.append(a, b, c);
   return li;
 }
