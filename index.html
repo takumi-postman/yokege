@@ -229,8 +229,9 @@
    ========================================================== */
 const CONFIG = {
   playerWidth:   40,    // 再生ヘッドの幅（小さくすると難しい）
-  followRate:    20,    // 狙った位置へ寄る速さ。大きいほど操作が直結する
-  windPush:     1.5,    // 砂嵐で流される強さ（風速に対する倍率）
+  windPush:     1.2,    // 砂嵐で押し流される強さ（風速に対する倍率）
+  driftMax:    0.28,    // 押し流される上限（画面幅に対する割合）
+  driftBack:    1.8,    // 嵐が止んだあと、ずれが戻る速さ
   playerSpeed:   420,   // キーで動かすときの速さ（px/秒）
   blockMinWidth: 26,    // 落ちてくるクリップの最小幅
   blockMaxWidth: 80,    // 　　　　　　　　　　最大幅
@@ -310,6 +311,7 @@ const CONFIG = {
   quakeWarn:   2.8,     // 揺れはじめ（予告）の秒数。読んで動く時間を含む
   quakeTime:    10,     // 崩れ続ける秒数
   rubbleEvery: 0.40,    // 崩落中、何秒ごとに石が落ちるか
+  quakeRedCut: 0.45,    // 崩落中に赤を間引く割合（アイテムの出方は変えない）
 
   // --- 砂嵐 ---
   stormEvery:   45,     // 嵐が終わってから、次の予兆までの秒数
@@ -362,7 +364,8 @@ const state = {
   scarabs:    [],   // スカラベ
   debris:     [],   // 切られた／消された破片
   playerX:     0,
-  aimX:        0,   // 動かそうとしている位置。風で実際の位置とずれる
+  aimX:        0,   // 動かそうとしている位置
+  drift:       0,   // 風に押されて溜まったずれ。指の位置からこれだけ離れる
   startTime:   0,
   lastTime:    0,
   spawnTimer:  0,   // 次の出現までの残り秒数。レートぶん速く減る
@@ -494,11 +497,16 @@ function update(dt, now){
   const half = CONFIG.playerWidth / 2;
   state.aimX = Math.max(half, Math.min(W - half, state.aimX));
 
-  // 狙った位置へ寄せてから、砂嵐の風で流す。
-  // 風に逆らって指を置き続けないと、じわじわ持っていかれる。
-  state.playerX += (state.aimX - state.playerX) * Math.min(1, dt * CONFIG.followRate);
-  if(state.storm > 0) state.playerX += state.wind * CONFIG.windPush * stormIntensity() * dt;
-  state.playerX = Math.max(half, Math.min(W - half, state.playerX));
+  // 砂嵐に押される。指を置いたままだと、ずれがどんどん溜まって流されていく。
+  // 逆らうには、風上へ指をずらし続けるしかない。
+  if(state.storm > 0){
+    state.drift += state.wind * CONFIG.windPush * stormIntensity() * dt;
+    const cap = W * CONFIG.driftMax;
+    state.drift = Math.max(-cap, Math.min(cap, state.drift));
+  } else {
+    state.drift *= Math.max(0, 1 - dt * CONFIG.driftBack);      // 止んだら戻る
+  }
+  state.playerX = Math.max(half, Math.min(W - half, state.aimX + state.drift));
 
   spawn(dt, r);
   updateSnakes(dt, r);
@@ -806,6 +814,14 @@ function spawn(dt, r){
   const d = state.difficulty;
   // 嵐の間はアイテムを増やして、視界が悪いぶんを埋め合わせる
   let kind = pickKind(state.elapsed, state.storm > 0 ? CONFIG.stormItems : 1);
+
+  // 石が降っているあいだは赤を間引く。石と赤が同じ量だと、そこだけ難度が跳ね上がる。
+  // 間引くのは赤だけで、アイテムの出方はそのまま。
+  if(state.quake > 0 && kind === "red" && Math.random() < CONFIG.quakeRedCut){
+    state.spawnTimer = Math.max(CONFIG.spawnMin,
+                      CONFIG.spawnEvery - CONFIG.spawnGain * Math.pow(d, CONFIG.rampPower)) / 1000;
+    return;
+  }
   let nearPlayer = false;
 
   // 救済：しばらく何も取れていなければ、届く位置に緑かダイヤを落とす
@@ -1316,7 +1332,7 @@ const SCENES = [
   { at:  60, label:"夜",         ground:"sand", pal:PHASES[3], paint:g => paintDesert(g, PHASES[3]) },
   { at:  80, label:"古代遺跡",   ground:"stone", indoor:true, propKind:"ruins", pal:RUIN_PAL, paint:paintRuins },
   { at: 120, label:"薄明",       ground:"sand", pal:PHASES[4], paint:g => paintDesert(g, PHASES[4]) },
-  { at: 140, label:"スフィンクス", ground:"sandFar",              paint:paintSphinx },
+  { at: 140, label:"スフィンクス", ground:"sandFar", pal:PHASES[5], paint:paintSphinx },
   { at: 200, label:"王墓",       ground:"slab",  indoor:true,   paint:paintChamber },
 ];
 
@@ -1643,9 +1659,7 @@ function paintSphinx(g){
   g.fillStyle = "#ffdca0";
   g.beginPath(); g.arc(sx, sy, H * 0.055, 0, Math.PI * 2); g.fill();
 
-  pyramid(g, W * 0.15, H * 0.72, W * 0.22, H * 0.22, "#8d6440", "#563922");
-  pyramid(g, W * 0.31, H * 0.72, W * 0.14, H * 0.14, "#7b5634", "#4a301c");
-
+  // ピラミッドもヤシも、ここから先は毎フレーム流れてくるので焼き込まない。
   ridge(g, [[0,.715],[.30,.700],[.62,.720],[1,.705]], "#8a5f3a");
   sphinx(g, W * 0.50, H * 0.80, H * 0.50);
   ridge(g, [[0,.860],[.34,.882],[.70,.856],[1,.874]], "#4e3320");
@@ -2154,7 +2168,7 @@ function start(){
   btn.hidden = false;
   Object.assign(state, {
     running:true, blocks:[], snakes:[], scarabs:[], debris:[],
-    playerX:W / 2, aimX:W / 2, elapsed:0, difficulty:0, sinceItem:0, redCount:0,
+    playerX:W / 2, aimX:W / 2, drift:0, elapsed:0, difficulty:0, sinceItem:0, redCount:0,
     speedScale:1, shield:0, scissors:0, rippleCd:0, flash:0,
     phase:0, phaseLabel:0, phaseAt:0,
     storm:0, stormWarn:0, stormNext:CONFIG.stormEvery, wind:0, sand:[], travel:0,
@@ -2196,7 +2210,7 @@ document.getElementById("chipRipple").addEventListener("click", e => {
    「もう一度」はここへ戻す（いきなり始めない）。 */
 function showStart(){
   state.running = false;
-  Object.assign(state, { elapsed:0, difficulty:0, sinceItem:0, redCount:0, aimX:W / 2, playerX:W / 2,
+  Object.assign(state, { elapsed:0, difficulty:0, sinceItem:0, redCount:0, aimX:W / 2, playerX:W / 2, drift:0,
                          speedScale:1, shield:0, scissors:0, rippleCd:0, flash:0,
                          phase:0, phaseLabel:0, phaseAt:0,
                          storm:0, stormWarn:0, stormNext:CONFIG.stormEvery, travel:0,
