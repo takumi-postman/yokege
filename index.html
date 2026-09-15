@@ -295,8 +295,9 @@ const CONFIG = {
   // --- リップル削除（スペースキー） ---
   rippleCooldown: 22,   // 秒
 
-  // --- 地面の流れ ---
-  groundSpeed:  0.42,   // 1秒に模様が何周ぶん手前へ流れるか
+  // --- 歩く速さ ---
+  travelSpeed: 0.095,   // 地平線から足元まで約10秒。歩いている速さ。
+  propEvery:   0.055,   // 景色のものが生まれる間隔（travel 単位）
 
   // --- 時間帯 ---
   phaseEvery:   35,     // 何秒ごとに時間帯が変わるか（8つで一周＝4分40秒）
@@ -367,7 +368,9 @@ const state = {
   stormNext:   0,   // 次の予兆までの残り秒数
   wind:        0,   // 風。符号が向き、大きさが強さ
   sand:       [],   // 舞っている砂
-  travel:      0,   // どれだけ歩いたか。地面の模様を流すのに使う
+  travel:      0,   // どれだけ歩いたか。景色と地面を流すのに使う
+  props:      [],   // いま見えている風景のもの（ヤシ・オアシス・岩・ピラミッド）
+  propTimer:   0,   // 次に何かが生まれるまで
   speedScale:  1,   // 緑による減速（0.45〜1）
   shield:      0,   // シールドの残り秒数
   scissors:    0,   // ハサミの残り本数。1本につき赤1個ぶん耐えられる
@@ -425,7 +428,8 @@ function update(dt, now){
   state.elapsed    = (now - state.startTime) / 1000;   // 記録用。巻き戻さない
   state.difficulty += dt;                              // 難易度用。リップルで巻き戻る
   state.sinceItem  += dt;
-  state.travel     += dt * r * CONFIG.groundSpeed;   // 減速すると地面もゆっくり流れる
+  state.travel     += dt * r * CONFIG.travelSpeed;   // 減速すると景色もゆっくり流れる
+  updateProps(dt * r);
   state.redCount    = countReds();
 
   // 場面を進める。周回ではなく、旅として前へ進む。最後まで行ったらそこで留まる。
@@ -864,6 +868,7 @@ function rippleDelete(){
    ========================================================== */
 function draw(){
   paintBackdrop();
+  drawProps(SCENES[state.phase].pal);
   drawGround(SCENES[state.phase].ground);
   drawSandHaze();
 
@@ -1156,24 +1161,122 @@ const PHASES = [
 /* 場面の並び。旅の順番そのもの。
    夕暮れに歩き出して、夜がいちばん深いところで遺跡に潜り、抜けると夜明けが待っている。 */
 const SCENES = [
-  { at:   0, label:"夕暮れ",     ground:"sand",    paint:g => paintDesert(g, PHASES[0]) },
-  { at:  20, label:"日没",       ground:"sand",    paint:g => paintDesert(g, PHASES[1]) },
-  { at:  40, label:"宵",         ground:"sand",    paint:g => paintDesert(g, PHASES[2]) },
-  { at:  60, label:"夜",         ground:"sand",    paint:g => paintDesert(g, PHASES[3]) },
-  { at:  80, label:"古代遺跡",   ground:"stone",   paint:paintRuins },
-  { at: 120, label:"薄明",       ground:"sand",    paint:g => paintDesert(g, PHASES[4]) },
-  { at: 140, label:"スフィンクス", ground:"sandFar", paint:paintSphinx },
-  { at: 200, label:"王墓",       ground:"slab",    paint:paintChamber },
+  { at:   0, label:"夕暮れ",     ground:"sand", pal:PHASES[0], paint:g => paintDesert(g, PHASES[0]) },
+  { at:  20, label:"日没",       ground:"sand", pal:PHASES[1], paint:g => paintDesert(g, PHASES[1]) },
+  { at:  40, label:"宵",         ground:"sand", pal:PHASES[2], paint:g => paintDesert(g, PHASES[2]) },
+  { at:  60, label:"夜",         ground:"sand", pal:PHASES[3], paint:g => paintDesert(g, PHASES[3]) },
+  { at:  80, label:"古代遺跡",   ground:"stone",                paint:paintRuins },
+  { at: 120, label:"薄明",       ground:"sand", pal:PHASES[4], paint:g => paintDesert(g, PHASES[4]) },
+  { at: 140, label:"スフィンクス", ground:"sandFar",              paint:paintSphinx },
+  { at: 200, label:"王墓",       ground:"slab",                 paint:paintChamber },
 ];
 
 /* 足元の地面。視点は変えずに、模様だけを手前へ流して
    「歩いて前に進んでいる」ように見せる。奥は細く薄く、手前ほど太く広がる。 */
 const GROUND = {
-  sand:    { top:0.83, rows:9, kind:"ripple", color:"255,226,182", alpha:0.16 },
-  sandFar: { top:0.87, rows:8, kind:"ripple", color:"255,222,176", alpha:0.16 },
-  stone:   { top:0.86, rows:7, kind:"seam",   color:"150,116,72",  alpha:0.50 },
-  slab:    { top:0.82, rows:8, kind:"seam",   color:"120,104,86",  alpha:0.45 },
+  sand:    { top:0.66, rows:26, kind:"ripple", color:"255,226,182", alpha:0.13 },
+  sandFar: { top:0.87, rows:10, kind:"ripple", color:"255,222,176", alpha:0.16 },
+  stone:   { top:0.86, rows:10, kind:"seam",   color:"150,116,72",  alpha:0.50 },
+  slab:    { top:0.82, rows:11, kind:"seam",   color:"120,104,86",  alpha:0.45 },
 };
+
+/* ==========================================================
+   風景のもの ─ 地平線で生まれ、近づき、通り過ぎたら消える。
+   生まれるたびに中身を作り直すので、同じ景色は二度と来ない。
+   ========================================================== */
+const HORIZON = 0.63;
+
+function spawnProp(){
+  const r = Math.random();
+  const o = {
+    z: 0,                                    // 0=地平線  1=足元
+    x: Math.random() * 1.8 - 0.4,            // 画面の外側にもはみ出す
+    big: 1,
+  };
+  if(r < 0.13){
+    o.kind  = "oasis";
+    o.w     = 0.7 + Math.random() * 0.9;
+    o.palms = [];
+    const n = 1 + Math.floor(Math.random() * 4);   // 生えている本数が毎回ちがう
+    for(let i = 0; i < n; i++){
+      o.palms.push({ dx: (Math.random() * 2 - 1) * 1.0, h: 0.65 + Math.random() * 0.8 });
+    }
+  } else if(r < 0.42){
+    o.kind = "palm";
+    o.h    = 0.6 + Math.random() * 0.9;
+    o.lean = Math.random() < 0.5 ? 1 : -1;
+  } else if(r < 0.56){
+    o.kind = "rock";
+    o.w    = 0.5 + Math.random() * 0.9;
+  } else {
+    o.kind = "tuft";
+    o.h    = 0.5 + Math.random() * 0.8;
+  }
+  return o;
+}
+
+/* 目印。場面が変わる少し前に地平線へ置く。
+   遠くて大きいものは近づくのが遅く見えるので、進みを半分にしてある。 */
+function spawnLandmark(){
+  return { kind:"pyramid", z:0, x:0.5 + (Math.random() * 0.3 - 0.15), big:4.2, slow:0.42 };
+}
+
+function updateProps(step){
+  for(let i = state.props.length - 1; i >= 0; i--){
+    const o = state.props[i];
+    o.z += step * CONFIG.travelSpeed * (o.slow || 1) / CONFIG.travelSpeed * CONFIG.travelSpeed;
+    if(o.z > 1.08) state.props.splice(i, 1);
+  }
+  state.propTimer -= step * CONFIG.travelSpeed;
+  if(state.propTimer <= 0){
+    state.props.push(spawnProp());
+    state.propTimer = CONFIG.propEvery * (0.6 + Math.random() * 0.9);
+  }
+}
+
+/* 開始時やタイトル画面で、地平線から足元までを一度に埋める */
+function seedProps(){
+  state.props = [];
+  for(let z = 0.02; z < 1; z += CONFIG.propEvery * (0.6 + Math.random() * 0.9)){
+    const o = spawnProp();
+    o.z = z;
+    state.props.push(o);
+  }
+  state.propTimer = CONFIG.propEvery;
+}
+
+function drawProps(P){
+  if(!P) return;
+  const top = H * HORIZON, span = H - top;
+  const list = state.props.slice().sort((a, b) => a.z - b.z);   // 奥から描く
+
+  for(const o of list){
+    const p  = Math.max(0, Math.min(1.1, o.z));
+    const y  = top + span * p * p;
+    const sc = (0.08 + p * 1.9) * (o.big || 1);
+    const x  = W / 2 + (o.x - 0.5) * W * (0.20 + p * 2.4);
+    const tier = p < 0.32 ? 0 : (p < 0.68 ? 1 : 2);   // 手前ほど暗いシルエット
+    const col  = P.veg[tier];
+
+    if(o.kind === "oasis"){
+      oasis(ctx, x, y, W * 0.16 * sc * o.w, H * 0.030 * sc, P.water);
+      for(const pm of o.palms){
+        palm(ctx, x + W * 0.10 * sc * pm.dx, y - H * 0.004 * sc, H * 0.10 * sc * pm.h, col);
+      }
+    } else if(o.kind === "palm"){
+      palm(ctx, x, y, H * 0.10 * sc * o.h, col);
+    } else if(o.kind === "tuft"){
+      tuft(ctx, x, y, H * 0.030 * sc * o.h, col);
+    } else if(o.kind === "rock"){
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.ellipse(x, y, W * 0.020 * sc * o.w, H * 0.016 * sc * o.w, 0, Math.PI, 0);
+      ctx.closePath(); ctx.fill();
+    } else if(o.kind === "pyramid"){
+      pyramid(ctx, x, y, W * 0.11 * sc, H * 0.11 * sc, P.pyr[0], P.pyr[1]);
+    }
+  }
+}
 
 function drawGround(name){
   const G = GROUND[name];
@@ -1785,6 +1888,8 @@ function tuft(g, x, baseY, h, color){
    ========================================================== */
 function drawTitle(){
   paintBackdrop();
+  drawProps(SCENES[state.phase].pal);
+  drawGround(SCENES[state.phase].ground);
   drawPlayer(W / 2);
 
   const y1 = H / 2 - 52, y2 = H / 2 - 18;
