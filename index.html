@@ -215,6 +215,7 @@
     <span class="chip" id="chipShield" hidden>SHIELD <b id="shieldVal">5.0</b></span>
     <span class="chip" id="chipCut" hidden>✂ あと <b id="cutVal">1</b> 回</span>
     <button type="button" class="chip" id="chipRipple">リップル削除 <b id="rippleVal">READY</b></button>
+    <button type="button" class="chip" id="muteBtn">♪ 音あり</button>
     <span class="hint">マウス / 指 / ← →</span>
   </div>
 
@@ -433,6 +434,7 @@ function update(dt, now){
   if(p !== state.phase){
     state.phase = p; state.phaseAt = state.elapsed; state.phaseLabel = 3.0;
     setBackdrop(p, false);
+    SFX.scene();
   }
   if(state.phaseLabel > 0) state.phaseLabel -= dt;
   if(bdFade < 1) bdFade = Math.min(1, bdFade + dt / 2.5);
@@ -483,6 +485,7 @@ function update(dt, now){
     // シールド中の赤は、届く手前で割れる
     if(state.shield > 0 && b.kind === "red" && shieldHits(b)){
       shatter(b, 90);
+      SFX.shield();
       state.blocks.splice(i, 1);
       continue;
     }
@@ -492,17 +495,23 @@ function update(dt, now){
 
     if(b.kind === "green"){
       state.speedScale = Math.max(CONFIG.slowFloor, state.speedScale - CONFIG.slowAmount);
+      SFX.green(state.speedScale);
     } else if(b.kind === "pot"){
       releaseSnake(b.x + b.w / 2, b.y + b.h / 2);
+      SFX.pot();
     } else if(b.kind === "gem"){
       state.shield = CONFIG.shieldTime;
+      SFX.gem();
     } else if(b.kind === "scissors"){
       state.scissors = Math.min(CONFIG.scissorsMax, state.scissors + 1);
+      SFX.pickCut();
     } else if(b.kind === "scarab"){
       releaseScarab(b.x + b.w / 2, b.y + b.h / 2);
+      SFX.scarab();
     } else if(state.scissors > 0){
       state.scissors--;                          // ハサミを1本使って切り抜ける
       shatter(b, 150);
+      SFX.snip();
     } else {
       gameOver();
       return;
@@ -539,6 +548,7 @@ function updateStorm(dt){
     }
   }
   updateSand(dt);
+  stormNoise(stormIntensity());     // 視界の悪さと音量が連動する
 }
 
 /* 一粒ごとに少しばらつかせた風 */
@@ -846,6 +856,7 @@ function rippleDelete(){
   state.sinceItem  = 0;
   state.rippleCd   = CONFIG.rippleCooldown;
   state.flash      = 0.35;
+  SFX.ripple();
 }
 
 /* ==========================================================
@@ -1829,6 +1840,7 @@ function updateHud(){
 const btn = document.getElementById("btn");
 
 function start(){
+  audio();                          // 最初のクリックのうちに音の出口を開けておく
   hideVeils();
   btn.hidden = false;
   Object.assign(state, {
@@ -1853,6 +1865,8 @@ function gameOver(){
     localStorage.setItem("dodgeBest", String(best));
     document.getElementById("best").textContent = toTimecode(best);
   }
+  SFX.hit();
+  if(SOUND.noiseGain) SOUND.noiseGain.gain.value = 0;   // 嵐の音も止める
   draw();          // 最後の1枚を残して、その上に選択画面をかぶせる
   showOver();
   submitScore(state.elapsed);
@@ -1915,6 +1929,108 @@ for(const key of Object.keys(LAB)){
     localStorage.setItem("lab-" + key, el.checked ? "1" : "0");
   });
 }
+
+/* ==========================================================
+   11-2. 音 ─ 波形をその場で合成する。音声ファイルは使わない。
+   ========================================================== */
+const SOUND = { on:true, ctx:null, master:null, noise:null, noiseGain:null };
+
+/* 音の出口。ブラウザの決まりで、最初のクリックより前には鳴らせない。 */
+function audio(){
+  if(!SOUND.on) return null;
+  if(!SOUND.ctx){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return null;
+    SOUND.ctx = new AC();
+    SOUND.master = SOUND.ctx.createGain();
+    SOUND.master.gain.value = 0.5;
+    SOUND.master.connect(SOUND.ctx.destination);
+  }
+  if(SOUND.ctx.state === "suspended") SOUND.ctx.resume();
+  return SOUND.ctx;
+}
+
+/* 単音。slideTo を渡すと、鳴っている間に音程が動く。 */
+function tone(freq, dur, type, vol, slideTo){
+  const ac = audio(); if(!ac) return;
+  const t = ac.currentTime;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type || "sine";
+  o.frequency.setValueAtTime(freq, t);
+  if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(SOUND.master);
+  o.start(t); o.stop(t + dur + 0.03);
+}
+
+/* 短いノイズ。割れる音や擦れる音のもと。 */
+function noiseBurst(dur, vol, hz, sweepTo){
+  const ac = audio(); if(!ac) return;
+  const t = ac.currentTime, n = Math.floor(ac.sampleRate * dur);
+  const buf = ac.createBuffer(1, n, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+  const src = ac.createBufferSource(); src.buffer = buf;
+  const f = ac.createBiquadFilter(); f.type = "bandpass";
+  f.frequency.setValueAtTime(hz, t);
+  if(sweepTo) f.frequency.exponentialRampToValueAtTime(Math.max(40, sweepTo), t + dur);
+  const g = ac.createGain(); g.gain.value = vol;
+  src.connect(f); f.connect(g); g.connect(SOUND.master);
+  src.start(t);
+}
+
+/* 砂嵐。鳴りっぱなしのノイズを1本だけ作って、音量で強さを表す。 */
+function stormNoise(level){
+  if(!SOUND.on || (level <= 0 && !SOUND.noise)){
+    if(SOUND.noiseGain) SOUND.noiseGain.gain.value = 0;
+    return;
+  }
+  const ac = audio(); if(!ac) return;
+  if(!SOUND.noise){
+    const n = Math.floor(ac.sampleRate * 2);
+    const buf = ac.createBuffer(1, n, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    const src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
+    const f = ac.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 850;
+    const g = ac.createGain(); g.gain.value = 0;
+    src.connect(f); f.connect(g); g.connect(SOUND.master);
+    src.start();
+    SOUND.noise = src; SOUND.noiseGain = g;
+  }
+  SOUND.noiseGain.gain.setTargetAtTime(level * 0.15, ac.currentTime, 0.25);
+}
+
+const SFX = {
+  green:  r => { const k = Math.max(0.55, r); tone(680 * k, 0.17, "triangle", 0.17, 400 * k); },
+  pot:    () => { noiseBurst(0.17, 0.20, 1700, 520); tone(900, 0.09, "square", 0.05); },
+  gem:    () => { tone(1180, 0.13, "sine", 0.13); setTimeout(() => tone(1770, 0.19, "sine", 0.11), 70); },
+  pickCut:() => tone(2100, 0.05, "square", 0.07, 1500),
+  snip:   () => { noiseBurst(0.08, 0.20, 4200, 2100); tone(2700, 0.05, "square", 0.06); },
+  scarab: () => tone(310, 0.15, "triangle", 0.13, 215),
+  shield: () => noiseBurst(0.09, 0.12, 2600, 1200),
+  hit:    () => { tone(165, 0.5, "sawtooth", 0.26, 42); noiseBurst(0.32, 0.17, 320, 90); },
+  ripple: () => { noiseBurst(0.5, 0.24, 2600, 180); tone(95, 0.55, "sine", 0.20, 40); },
+  scene:  () => { tone(120, 1.5, "sine", 0.13, 195); tone(182, 1.2, "triangle", 0.05, 245); },
+};
+
+const muteBtn = document.getElementById("muteBtn");
+try { SOUND.on = localStorage.getItem("dodgeMute") !== "1"; } catch(err){}
+function paintMute(){
+  muteBtn.textContent = SOUND.on ? "♪ 音あり" : "♪ 音なし";
+  muteBtn.classList.toggle("on-ripple", SOUND.on);
+}
+paintMute();
+muteBtn.addEventListener("click", e => {
+  SOUND.on = !SOUND.on;
+  try { localStorage.setItem("dodgeMute", SOUND.on ? "0" : "1"); } catch(err){}
+  if(!SOUND.on && SOUND.noiseGain) SOUND.noiseGain.gain.value = 0;
+  if(SOUND.on) tone(880, 0.09, "sine", 0.12);
+  paintMute();
+  e.currentTarget.blur();
+});
 
 /* ==========================================================
    12. 順位表 ─ 遊び終わったらその場で送って、その場で順位を出す
