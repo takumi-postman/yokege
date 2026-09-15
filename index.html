@@ -308,13 +308,11 @@ const CONFIG = {
   // --- 時間帯 ---
   phaseEvery:   35,     // 何秒ごとに時間帯が変わるか（8つで一周＝4分40秒）
 
-  // --- アヌビス ---
-  bossAt:        68,    // 立ち上がる時刻（遺跡は56秒から）
-  bossRise:     2.2,    // 立ち上がるのにかかる秒数
-  bossAttacks:    4,    // 何回しのげば崩れるか
-  bossTell:     1.15,   // 予告（振りかぶり）の秒数
-  bossStrike:   0.40,   // 実際に当たっている秒数
+  // --- 待ち受けるもの ---
+  bossTell:     1.15,   // 予告（構え）の秒数
+  bossStrike:   0.42,   // 実際に当たっている秒数
   bossGap:      1.45,   // 次の攻撃までの間
+  bossCombo:    0.55,   // 連続攻撃のときの短い間
 
   // --- 遺跡の崩落 ---
   quakeEvery:   24,     // 崩落と崩落のあいだの秒数
@@ -755,14 +753,23 @@ function warnMark(x, y, r){
   ctx.beginPath(); ctx.arc(x, y + r * 0.50, r * 0.13, 0, Math.PI * 2); ctx.fill();
 }
 
-/* --- アヌビス --------------------------------------------- */
-/* 遺跡の途中で、通り過ぎるはずの像が1体だけ立ち上がる。
-   振りかぶり → 一撃 → 間合い、を4回。しのぎ切ると崩れ落ちて道が開く。
-   当たる場所は必ず先に赤で見せる。知らせずに当てるのは理不尽なので。 */
+/* --- 待ち受けるもの ---------------------------------------- */
+/* 遺跡ではアヌビス、砂漠ではスフィンクスが立ちはだかる。
+   構え → 一撃 → 間合い、を繰り返す。当たる場所は必ず先に赤で見せる。
+   技は複数持たせて、同じものが3回続かないようにしてある。 */
+const BOSS_DEF = {
+  anubis: { at:  68, rise:2.2, attacks:5, moves:["slam","sweep","pillars"] },
+  sphinx: { at: 112, rise:2.4, attacks:4, moves:["laser","bomb"] },
+};
+
 function updateBoss(dt){
-  if(SCENES[state.phase].domain !== "ruins"){ state.boss = null; return; }
-  if(!state.boss && state.elapsed >= CONFIG.bossAt){
-    state.boss = { t:0, mode:"rise", left:CONFIG.bossAttacks, kind:"slam", x:W/2, side:1 };
+  const want = SCENES[state.phase].boss;
+  if(!want){ state.boss = null; return; }
+  const def = BOSS_DEF[want];
+
+  if(!state.boss && state.elapsed >= def.at){
+    state.boss = { who:want, t:0, mode:"rise", left:def.attacks,
+                   combo:0, kind:def.moves[0], last:null, run:0, x:W/2, side:1, spots:[] };
     SFX.rumble();
     return;
   }
@@ -771,65 +778,96 @@ function updateBoss(dt){
   B.t += dt;
 
   if(B.mode === "rise"){
-    if(B.t >= CONFIG.bossRise){ B.mode = "tell"; B.t = 0; aimBoss(B); }
+    if(B.t >= def.rise){ B.mode = "tell"; B.t = 0; aimBoss(B, def); }
   } else if(B.mode === "tell"){
     if(B.t >= CONFIG.bossTell){ B.mode = "strike"; B.t = 0; SFX.slam(); }
   } else if(B.mode === "strike"){
     bossHits(B);
     if(!state.running) return;
     if(B.t >= CONFIG.bossStrike){
-      B.left--;
-      B.mode = B.left <= 0 ? "fall" : "gap";
       B.t = 0;
-      if(B.mode === "fall") SFX.rumble();
+      if(B.combo > 0){ B.combo--; B.mode = "chain"; }   // 続けてもう一撃
+      else { B.left--; B.mode = B.left <= 0 ? "fall" : "gap"; if(B.mode === "fall") SFX.rumble(); }
     }
+  } else if(B.mode === "chain"){
+    if(B.t >= CONFIG.bossCombo){ B.mode = "tell"; B.t = 0; aimBoss(B, def, true); }
   } else if(B.mode === "gap"){
-    if(B.t >= CONFIG.bossGap){ B.mode = "tell"; B.t = 0; aimBoss(B); }
+    if(B.t >= CONFIG.bossGap){ B.mode = "tell"; B.t = 0; aimBoss(B, def); }
   }
 }
 
-function aimBoss(B){
-  B.kind = Math.random() < 0.55 ? "slam" : "sweep";
-  if(B.kind === "slam") B.x = W * (0.18 + Math.random() * 0.64);
-  else B.side = Math.random() < 0.5 ? -1 : 1;
+/* 技を選ぶ。同じ技が3回続いたら必ず別の技にする。
+   運だけで決めると、4回とも同じ技ということが実際に起きるため。 */
+function aimBoss(B, def, chained){
+  let pool = def.moves;
+  if(B.run >= 2) pool = def.moves.filter(m => m !== B.last);
+  const kind = pool[Math.floor(Math.random() * pool.length)];
+  B.run  = (kind === B.last) ? B.run + 1 : 1;
+  B.last = kind;
+  B.kind = kind;
+
+  if(kind === "slam")    B.x = W * (0.18 + Math.random() * 0.64);
+  if(kind === "sweep")   B.side = Math.random() < 0.5 ? -1 : 1;
+  if(kind === "laser")   B.spots = [state.playerX, W * (0.15 + Math.random() * 0.7)];
+  if(kind === "bomb")    B.spots = [0.2, 0.5, 0.8].map(f => W * (f + (Math.random() * 0.14 - 0.07)));
+
+  // ときどき連続で来る。1回避けたら終わり、と読ませないため。
+  if(!chained && B.combo <= 0 && Math.random() < 0.35) B.combo = 1;
 }
 
-/* 当たる範囲。予告と判定で同じものを使うので、見えている通りに当たる。 */
-function bossZone(B){
-  if(B.kind === "slam") return { x: B.x - W * 0.095, w: W * 0.19 };
-  return B.side < 0 ? { x: 0, w: W * 0.54 } : { x: W * 0.46, w: W * 0.54 };
+/* 当たる範囲。予告の描画と判定で同じものを使う。 */
+function bossZones(B){
+  const w = CONFIG.playerWidth;
+  if(B.kind === "slam")    return [{ x: B.x - W * 0.095, w: W * 0.19 }];
+  if(B.kind === "sweep")   return [B.side < 0 ? { x:0, w:W * 0.54 } : { x:W * 0.46, w:W * 0.54 }];
+  if(B.kind === "pillars") return [{ x:0, w:W * 0.30 }, { x:W * 0.70, w:W * 0.30 }];
+  if(B.kind === "laser")   return B.spots.map(x => ({ x: x - W * 0.045, w: W * 0.09 }));
+  if(B.kind === "bomb")    return B.spots.map(x => ({ x: x - W * 0.085, w: W * 0.17 }));
+  return [];
 }
 
 function bossHits(B){
   if(state.invuln > 0) return;
-  const z = bossZone(B), half = CONFIG.playerWidth / 2;
-  if(state.playerX + half > z.x && state.playerX - half < z.x + z.w){
-    state.lives--;
-    state.invuln = CONFIG.invulnTime;
-    SFX.hurt();
-    if(state.lives <= 0) gameOver();
+  const half = CONFIG.playerWidth / 2;
+  for(const z of bossZones(B)){
+    if(state.playerX + half > z.x && state.playerX - half < z.x + z.w){
+      state.lives--;
+      state.invuln = CONFIG.invulnTime;
+      SFX.hurt();
+      if(state.lives <= 0) gameOver();
+      return;
+    }
   }
 }
 
-/* 立ち上がったアヌビス。ジャッカルの頭と杖で、像と同じものだと分かるように。 */
+function bossScale(B, def){
+  const rise = B.mode === "rise" ? Math.min(1, B.t / def.rise) : 1;
+  const fall = B.mode === "fall" ? Math.max(0, 1 - B.t / 2.2) : 1;
+  return rise * fall;
+}
+
 function drawBoss(){
   const B = state.boss;
   if(!B) return;
-  const rise = B.mode === "rise" ? Math.min(1, B.t / CONFIG.bossRise) : 1;
-  const fall = B.mode === "fall" ? Math.max(0, 1 - B.t / 2.2) : 1;
-  const h = H * 0.60 * rise * fall;
-  if(h < 2) return;
+  const def = BOSS_DEF[B.who];
+  const k = bossScale(B, def);
+  if(k < 0.02) return;
+  ctx.save();
+  if(B.mode === "fall") ctx.globalAlpha = k;
+  if(B.who === "anubis") drawAnubisBoss(B, H * 0.60 * k);
+  else                   drawSphinxBoss(B, H * 0.66 * k);
+  ctx.restore();
+}
 
+/* 立ち上がったアヌビス。杖は構えで高く上がり、一撃で振り下ろされる。 */
+function drawAnubisBoss(B, h){
+  if(h < 2) return;
   const cx = W / 2, baseY = H * 0.87;
   const S = "#3f3020", L = "#6d5231", D = "#1a120b", GOLD = "#dcb75f";
 
-  ctx.save();
-  if(B.mode === "fall") ctx.globalAlpha = fall;
-
-  // 杖。振りかぶりで高く、一撃で下がる。
   let ang = -0.35;
   if(B.mode === "tell")   ang = -0.35 - 0.9 * (B.t / CONFIG.bossTell);
-  if(B.mode === "strike") ang = 0.85;
+  if(B.mode === "strike") ang = 0.95;
   const sx = cx + 0.30 * h, sy = baseY - 0.62 * h;
   ctx.save();
   ctx.translate(sx, sy); ctx.rotate(ang);
@@ -837,7 +875,6 @@ function drawBoss(){
   ctx.fillStyle = GOLD; ctx.fillRect(-0.05 * h, -0.60 * h, 0.10 * h, 0.07 * h);
   ctx.restore();
 
-  // 脚・腰布・胴
   ctx.fillStyle = S;
   ctx.fillRect(cx - 0.17 * h, baseY - 0.34 * h, 0.13 * h, 0.34 * h);
   ctx.fillRect(cx + 0.04 * h, baseY - 0.34 * h, 0.13 * h, 0.34 * h);
@@ -850,54 +887,134 @@ function drawBoss(){
   ctx.fillRect(cx - 0.16 * h, baseY - 0.70 * h, 0.32 * h, 0.22 * h);
   ctx.fillStyle = GOLD;
   ctx.fillRect(cx - 0.17 * h, baseY - 0.67 * h, 0.34 * h, 0.035 * h);
-
-  // 腕
   ctx.fillStyle = S;
   ctx.fillRect(cx + 0.14 * h, baseY - 0.68 * h, 0.17 * h, 0.055 * h);
   ctx.fillRect(cx - 0.30 * h, baseY - 0.66 * h, 0.16 * h, 0.055 * h);
-
-  // 首と頭
   ctx.fillRect(cx - 0.05 * h, baseY - 0.78 * h, 0.10 * h, 0.10 * h);
-  ctx.fillStyle = S;
   ctx.beginPath();
-  ctx.ellipse(cx, baseY - 0.84 * h, 0.10 * h, 0.075 * h, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();                                   // 鼻面（手前に突き出す）
+  ctx.ellipse(cx, baseY - 0.84 * h, 0.10 * h, 0.075 * h, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath();
   ctx.moveTo(cx - 0.02 * h, baseY - 0.87 * h);
   ctx.lineTo(cx + 0.19 * h, baseY - 0.855 * h);
   ctx.lineTo(cx + 0.19 * h, baseY - 0.805 * h);
   ctx.lineTo(cx - 0.02 * h, baseY - 0.79 * h);
   ctx.closePath(); ctx.fill();
-  for(const off of [-0.075, 0.035]){                 // 尖った耳
+  for(const off of [-0.075, 0.035]){
     ctx.beginPath();
-    ctx.moveTo(cx + off * h,          baseY - 0.88 * h);
-    ctx.lineTo(cx + (off + 0.02) * h, baseY - 1.00 * h);
+    ctx.moveTo(cx + off * h,           baseY - 0.88 * h);
+    ctx.lineTo(cx + (off + 0.02) * h,  baseY - 1.00 * h);
     ctx.lineTo(cx + (off + 0.075) * h, baseY - 0.885 * h);
     ctx.closePath(); ctx.fill();
   }
-  ctx.fillStyle = GOLD;                              // 目
+  ctx.fillStyle = GOLD;
   ctx.beginPath(); ctx.arc(cx + 0.045 * h, baseY - 0.845 * h, 0.017 * h, 0, Math.PI * 2); ctx.fill();
-  ctx.restore();
 }
 
-/* 攻撃の予告と、当たっている瞬間。見えている範囲がそのまま当たり判定。 */
+/* 立ちはだかるスフィンクス。構えのあいだ両目が灯り、口が開く。 */
+function drawSphinxBoss(B, h){
+  if(h < 2) return;
+  const cx = W / 2, baseY = H * 0.88;
+  sphinxFront(ctx, cx, baseY, h, ["#b8854f", "#7b5331"]);
+
+  const charging = B.mode === "tell" || B.mode === "strike";
+  if(!charging) return;
+  const heat = B.mode === "strike" ? 1 : B.t / CONFIG.bossTell;
+
+  if(B.kind === "laser"){                              // 両目が青白く灯る
+    for(const sx of [-1, 1]){
+      const ex = cx + sx * 0.072 * h, ey = baseY - 0.765 * h;
+      const g = ctx.createRadialGradient(ex, ey, 0, ex, ey, 0.10 * h);
+      g.addColorStop(0, "rgba(190,235,255," + (0.95 * heat).toFixed(2) + ")");
+      g.addColorStop(1, "rgba(150,210,255,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(ex, ey, 0.10 * h, 0, Math.PI * 2); ctx.fill();
+    }
+  } else {                                             // 口が赤く灯る
+    const mx = cx, my = baseY - 0.635 * h;
+    const g = ctx.createRadialGradient(mx, my, 0, mx, my, 0.11 * h);
+    g.addColorStop(0, "rgba(255,190,110," + (0.95 * heat).toFixed(2) + ")");
+    g.addColorStop(1, "rgba(255,140,60,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(mx, my, 0.11 * h, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+/* 予告と一撃。技ごとに当たり方の絵が違う。 */
 function drawBossZone(){
   const B = state.boss;
   if(!B || (B.mode !== "tell" && B.mode !== "strike")) return;
-  const z = bossZone(B);
+  const zones = bossZones(B);
+
   ctx.save();
   if(B.mode === "tell"){
-    const t = B.t / CONFIG.bossTell;
-    ctx.globalAlpha = 0.22 + 0.30 * Math.abs(Math.sin(t * Math.PI * 5));
-    ctx.fillStyle = "#ff4b3e";
-    ctx.fillRect(z.x, 0, z.w, H);
-    ctx.globalAlpha = 0.95;
-    ctx.strokeStyle = "#ff8076"; ctx.lineWidth = 3;
-    ctx.strokeRect(z.x + 1.5, 1.5, z.w - 3, H - 3);
-  } else {
-    ctx.globalAlpha = 0.85 * (1 - B.t / CONFIG.bossStrike);
-    ctx.fillStyle = "#ffe9e6";
-    ctx.fillRect(z.x, 0, z.w, H);
+    const pulse = 0.22 + 0.30 * Math.abs(Math.sin((B.t / CONFIG.bossTell) * Math.PI * 5));
+    for(const z of zones){
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = "#ff4b3e";
+      ctx.fillRect(z.x, 0, z.w, H);
+      ctx.globalAlpha = 0.95;
+      ctx.strokeStyle = "#ff8076"; ctx.lineWidth = 3;
+      ctx.strokeRect(z.x + 1.5, 1.5, z.w - 3, H - 3);
+    }
+    ctx.restore();
+    return;
+  }
+
+  const q = B.t / CONFIG.bossStrike;                   // 0→1
+  for(const z of zones){
+    if(B.kind === "sweep"){                            // 横一文字に薙ぐ
+      const dir = B.side < 0 ? 1 : -1;
+      const y = H * (0.30 + 0.24 * q);
+      ctx.globalAlpha = 0.95 * (1 - q);
+      const g = ctx.createLinearGradient(z.x, 0, z.x + z.w, 0);
+      g.addColorStop(0, "rgba(255,255,255,0)");
+      g.addColorStop(0.5, "#fff2ee");
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.strokeStyle = g;
+      ctx.lineWidth = H * 0.11 * (1 - q * 0.5);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(z.x, y + dir * H * 0.08);
+      ctx.quadraticCurveTo(z.x + z.w / 2, y - H * 0.06, z.x + z.w, y + dir * H * 0.08);
+      ctx.stroke();
+      ctx.globalAlpha = 0.30 * (1 - q);
+      ctx.fillStyle = "#ffd9d4"; ctx.fillRect(z.x, 0, z.w, H);
+
+    } else if(B.kind === "laser"){                     // 目からの光条
+      ctx.globalAlpha = 0.95 * (1 - q * 0.35);
+      const g = ctx.createLinearGradient(z.x, 0, z.x + z.w, 0);
+      g.addColorStop(0,   "rgba(150,215,255,0)");
+      g.addColorStop(0.5, "#ecfbff");
+      g.addColorStop(1,   "rgba(150,215,255,0)");
+      ctx.fillStyle = g; ctx.fillRect(z.x, 0, z.w, H);
+      ctx.globalAlpha = 0.55 * (1 - q * 0.35);
+      ctx.fillStyle = "#7fd4ff";
+      ctx.fillRect(z.x - z.w * 0.6, 0, z.w * 2.2, H);
+
+    } else if(B.kind === "bomb"){                      // 着弾して膨らむ
+      const cx = z.x + z.w / 2, r = z.w * (0.35 + q * 0.95);
+      ctx.globalAlpha = 0.95 * (1 - q);
+      const g = ctx.createRadialGradient(cx, H * 0.86, 0, cx, H * 0.86, r);
+      g.addColorStop(0,   "#fff3cf");
+      g.addColorStop(0.5, "#ff9a3c");
+      g.addColorStop(1,   "rgba(255,120,40,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(cx, H * 0.86, r, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 0.35 * (1 - q);
+      ctx.fillStyle = "#ffbe74"; ctx.fillRect(z.x, 0, z.w, H);
+
+    } else {                                           // 振り下ろし・両端
+      ctx.globalAlpha = 0.95 * (1 - q);
+      const g = ctx.createLinearGradient(z.x, 0, z.x + z.w, 0);
+      g.addColorStop(0,   "rgba(255,255,255,0)");
+      g.addColorStop(0.5, "#fff2ee");
+      g.addColorStop(1,   "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(z.x, 0, z.w, H * (0.35 + q * 0.75));
+      ctx.globalAlpha = 0.85 * (1 - q);
+      ctx.fillStyle = "#fff6d8";
+      ctx.fillRect(z.x - z.w * 0.15, H * 0.80, z.w * 1.3, H * 0.07 * (1 - q));
+    }
   }
   ctx.restore();
 }
@@ -1529,9 +1646,9 @@ const SCENES = [
   { at:  14, label:"日没",       ground:"sand", pal:PHASES[1], domain:"desert", paint:g => paintDesert(g, PHASES[1]) },
   { at:  28, label:"宵",         ground:"sand", pal:PHASES[2], domain:"desert", paint:g => paintDesert(g, PHASES[2]) },
   { at:  42, label:"夜",         ground:"sand", pal:PHASES[3], domain:"desert", paint:g => paintDesert(g, PHASES[3]) },
-  { at:  56, label:"古代遺跡",   ground:"stone", indoor:true, propKind:"ruins", pal:RUIN_PAL, domain:"ruins", paint:paintRuins },
+  { at:  56, label:"古代遺跡",   ground:"stone", indoor:true, propKind:"ruins", pal:RUIN_PAL, domain:"ruins", boss:"anubis", paint:paintRuins },
   { at:  90, label:"薄明",       ground:"sand", pal:PHASES[4], domain:"desert", paint:g => paintDesert(g, PHASES[4]) },
-  { at: 104, label:"スフィンクス", ground:"sandFar", pal:PHASES[5], domain:"desert", landmark:"sphinx", paint:paintSphinx },
+  { at: 104, label:"スフィンクス", ground:"sandFar", pal:PHASES[5], domain:"desert", boss:"sphinx", paint:paintSphinx },
   { at: 130, label:"王墓",       ground:"slab",  indoor:true, domain:"tomb", paint:paintChamber },
 ];
 
