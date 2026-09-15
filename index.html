@@ -41,6 +41,7 @@
   }
   .val.best{color:var(--amber)}
   .val.slow{color:var(--green)}
+  .val.life{color:#ff6b5e; letter-spacing:.10em}
   .stat{display:flex; align-items:baseline; gap:6px}
   .stat.push{margin-left:auto}
 
@@ -170,7 +171,8 @@
   <div class="bar">
     <h1>よけゲー</h1>
     <span class="k">30.00 fps</span>
-    <span class="stat push"><span class="k">Rate</span><span class="val" id="rate">×1.00</span></span>
+    <span class="stat push"><span class="k">Life</span><span class="val life" id="lifeVal">♥♥♥</span></span>
+    <span class="stat"><span class="k">Rate</span><span class="val" id="rate">×1.00</span></span>
     <span class="stat"><span class="k">Time</span><span class="val" id="time">00:00:00:00</span></span>
     <span class="stat"><span class="k">Best</span><span class="val best" id="best">00:00:00:00</span></span>
   </div>
@@ -184,7 +186,7 @@
     </div>
 
     <div class="veil" id="overView" hidden>
-      <p class="veil__title">当たった</p>
+      <p class="veil__title" id="overTitleText">当たった</p>
       <p class="veil__tc" id="overTc">00:00:00:00</p>
       <p class="veil__ttl" id="overTitle"></p>
       <p class="veil__next" id="overNext"></p>
@@ -228,6 +230,9 @@
    1. 設定 ─ ここの数字だけ変えれば難易度が変わる
    ========================================================== */
 const CONFIG = {
+  lives:          3,    // 体力。赤に当たると1つ減る
+  invulnTime:   1.3,    // 当たったあと、すり抜けられる秒数
+  clearAt:      155,    // ここまで生き延びたら踏破（2分35秒）
   playerWidth:   40,    // 再生ヘッドの幅（小さくすると難しい）
   playerSpeed:   420,   // キーで動かすときの速さ（px/秒）
   blockMinWidth: 26,    // 落ちてくるクリップの最小幅
@@ -382,6 +387,9 @@ const state = {
   propTimer:   0,   // 次に何かが生まれるまで
   landmarkFor:-1,   // どの場面ぶんの目印をもう置いたか
   prevPal:  null,   // ひとつ前の場面の色。移り変わるあいだ混ぜるのに使う
+  lives:       3,   // 残りの体力
+  invuln:      0,   // 無敵の残り秒数
+  cleared: false,   // 王墓まで辿り着いたか
   quake:       0,   // 崩落の残り秒数
   quakeWarn:   0,   // 予兆の残り秒数
   quakeNext:   0,   // 次の崩落までの残り秒数
@@ -472,12 +480,14 @@ function update(dt, now){
   if(state.phaseLabel > 0) state.phaseLabel -= dt;
   if(bdFade < 1) bdFade = Math.min(1, bdFade + dt / 6.0);   // 空も風景の色も6秒かけて溶かす
 
+  if(state.elapsed >= CONFIG.clearAt){ clearGame(); return; }   // 王墓を抜けて踏破
   updateStorm(dt);
   updateQuake(dt, r, state.difficulty);
 
   // 持続するものを減らす
   state.speedScale = Math.min(1, state.speedScale + CONFIG.slowRecover * dt);
   if(state.shield > 0) state.shield = Math.max(0, state.shield - dt);
+  if(state.invuln > 0) state.invuln = Math.max(0, state.invuln - dt);
   if(state.flash  > 0) state.flash  = Math.max(0, state.flash  - dt);
 
   // リップルは、赤が溜まって追い詰められているときほど早く戻ってくる
@@ -519,6 +529,7 @@ function update(dt, now){
 
     if(b.y > H){ state.blocks.splice(i, 1); continue; }
     if(b.kind === "fake" || b.held) continue;    // すり抜ける／運ばれ中は当たらない
+    if(b.kind === "red" && state.invuln > 0) continue;   // 当たった直後は無敵
 
     // シールド中の赤は、届く手前で割れる
     if(state.shield > 0 && b.kind === "red" && shieldHits(b)){
@@ -551,8 +562,13 @@ function update(dt, now){
       shatter(b, 150);
       SFX.snip();
     } else {
-      gameOver();
-      return;
+      state.lives--;                             // 即死ではなく体力が1つ減る
+      state.invuln = CONFIG.invulnTime;
+      shatter(b, 120);
+      state.blocks.splice(i, 1);
+      if(state.lives <= 0){ gameOver(); return; }
+      SFX.hurt();
+      continue;
     }
     state.blocks.splice(i, 1);
   }
@@ -638,8 +654,8 @@ function drawSandHaze(){
   const t   = performance.now() / 1000;
 
   // 全体にかかる薄い膜
-  const gust = 0.70 + 0.30 * Math.sin(t * 1.15);
-  ctx.fillStyle = "rgba(198,152,98," + (0.22 * k * gust).toFixed(3) + ")";
+  const gust = 0.72 + 0.28 * Math.sin(t * 1.15);
+  ctx.fillStyle = "rgba(200,155,100," + (0.40 * k * gust).toFixed(3) + ")";
   ctx.fillRect(0, 0, W, H);
 
   // 濃い砂の塊が風下へ横切る。均一に薄くかけても視界は塞がらないので、
@@ -649,11 +665,11 @@ function drawSandHaze(){
     const q  = ((t / span) + i * 0.37) % 1;
     const cx = dir > 0 ? -W * 0.45 + q * W * 1.9 : W * 1.45 - q * W * 1.9;
     const cy = H * (0.32 + 0.20 * Math.sin(t * 0.7 + i * 2.1));
-    const r  = W * (0.33 + 0.09 * Math.sin(t * 0.9 + i));
+    const r  = W * (0.44 + 0.10 * Math.sin(t * 0.9 + i));
     const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    grd.addColorStop(0,    "rgba(208,166,112," + (0.42 * k).toFixed(3) + ")");
-    grd.addColorStop(0.55, "rgba(208,166,112," + (0.22 * k).toFixed(3) + ")");
-    grd.addColorStop(1,    "rgba(208,166,112,0)");
+    grd.addColorStop(0,    "rgba(212,172,118," + (0.66 * k).toFixed(3) + ")");
+    grd.addColorStop(0.55, "rgba(212,172,118," + (0.36 * k).toFixed(3) + ")");
+    grd.addColorStop(1,    "rgba(212,172,118,0)");
     ctx.fillStyle = grd;
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
   }
@@ -663,6 +679,11 @@ function drawSandHaze(){
 function drawSandStreaks(){
   const k = stormIntensity();
   if(k <= 0) return;
+  ctx.save();                                    // 嵐のあいだ、ふちが光り続ける
+  ctx.strokeStyle = "rgba(230,178,110," + (0.55 * k).toFixed(3) + ")";
+  ctx.lineWidth = 6;
+  ctx.strokeRect(3, 3, W - 6, H - 6);
+  ctx.restore();
   const dir = Math.sign(state.wind) || 1;
   ctx.save();
   ctx.globalAlpha = 0.5 * k;
@@ -1193,6 +1214,7 @@ function drawScarabs(){
 }
 
 function drawPlayer(x){
+  if(state.invuln > 0 && Math.floor(state.invuln * 12) % 2 === 0) return;   // 被弾直後は点滅
   const half = CONFIG.playerWidth / 2;
   ctx.fillStyle = COLOR.cyan;
   ctx.fillRect(x - half, PLAYER_Y(), CONFIG.playerWidth, PLAYER_H);
@@ -1337,13 +1359,13 @@ const RUIN_PAL = { veg:["#4a3a24","#2e2316","#1a130c"], water:["#2a3d3a","#121d1
    夕暮れに歩き出して、夜がいちばん深いところで遺跡に潜り、抜けると夜明けが待っている。 */
 const SCENES = [
   { at:   0, label:"夕暮れ",     ground:"sand", pal:PHASES[0], domain:"desert", paint:g => paintDesert(g, PHASES[0]) },
-  { at:  20, label:"日没",       ground:"sand", pal:PHASES[1], domain:"desert", paint:g => paintDesert(g, PHASES[1]) },
-  { at:  40, label:"宵",         ground:"sand", pal:PHASES[2], domain:"desert", paint:g => paintDesert(g, PHASES[2]) },
-  { at:  60, label:"夜",         ground:"sand", pal:PHASES[3], domain:"desert", paint:g => paintDesert(g, PHASES[3]) },
-  { at:  80, label:"古代遺跡",   ground:"stone", indoor:true, propKind:"ruins", pal:RUIN_PAL, domain:"ruins", paint:paintRuins },
-  { at: 120, label:"薄明",       ground:"sand", pal:PHASES[4], domain:"desert", paint:g => paintDesert(g, PHASES[4]) },
-  { at: 140, label:"スフィンクス", ground:"sandFar", pal:PHASES[5], domain:"desert", landmark:"sphinx", paint:paintSphinx },
-  { at: 200, label:"王墓",       ground:"slab",  indoor:true, domain:"tomb", paint:paintChamber },
+  { at:  14, label:"日没",       ground:"sand", pal:PHASES[1], domain:"desert", paint:g => paintDesert(g, PHASES[1]) },
+  { at:  28, label:"宵",         ground:"sand", pal:PHASES[2], domain:"desert", paint:g => paintDesert(g, PHASES[2]) },
+  { at:  42, label:"夜",         ground:"sand", pal:PHASES[3], domain:"desert", paint:g => paintDesert(g, PHASES[3]) },
+  { at:  56, label:"古代遺跡",   ground:"stone", indoor:true, propKind:"ruins", pal:RUIN_PAL, domain:"ruins", paint:paintRuins },
+  { at:  90, label:"薄明",       ground:"sand", pal:PHASES[4], domain:"desert", paint:g => paintDesert(g, PHASES[4]) },
+  { at: 104, label:"スフィンクス", ground:"sandFar", pal:PHASES[5], domain:"desert", landmark:"sphinx", paint:paintSphinx },
+  { at: 130, label:"王墓",       ground:"slab",  indoor:true, domain:"tomb", paint:paintChamber },
 ];
 
 /* 足元の地面。視点は変えずに、模様だけを手前へ流して
@@ -2167,6 +2189,8 @@ function updateHud(){
   el.classList.toggle("slow", r < 0.995);
 
   document.getElementById("time").textContent = toTimecode(state.elapsed);
+  const alive = Math.max(0, state.lives);
+  lifeVal.textContent = "♥".repeat(alive) + "♡".repeat(Math.max(0, CONFIG.lives - alive));
 
   const sh = document.getElementById("chipShield");
   sh.hidden = state.shield <= 0;
@@ -2201,6 +2225,7 @@ function start(){
     storm:0, stormWarn:0, stormNext:CONFIG.stormEvery, wind:0, sand:[], travel:0,
     props:[], propTimer:0, landmarkFor:-1, prevPal:null,
     quake:0, quakeWarn:0, quakeNext:CONFIG.quakeEvery, rubbleTimer:0,
+    lives:CONFIG.lives, invuln:0, cleared:false,
   });
   seedProps();
   setBackdrop(0, true);
@@ -2208,6 +2233,23 @@ function start(){
   state.spawnTimer = 0.4;
   btn.textContent = "リセット";
   requestAnimationFrame(loop);
+}
+
+/* 王墓を抜けた。ここが旅の終わり。 */
+function clearGame(){
+  state.running = false;
+  state.cleared = true;
+  btn.hidden = true;
+  if(SOUND.noiseGain) SOUND.noiseGain.gain.value = 0;
+  SFX.clear();
+  if(state.elapsed > best){
+    best = state.elapsed;
+    localStorage.setItem("dodgeBest", String(best));
+    document.getElementById("best").textContent = toTimecode(best);
+  }
+  draw();
+  showOver();
+  submitScore(state.elapsed);
 }
 
 function gameOver(){
@@ -2243,6 +2285,7 @@ function showStart(){
                          storm:0, stormWarn:0, stormNext:CONFIG.stormEvery, travel:0,
                          props:[], propTimer:0, landmarkFor:-1, prevPal:null,
                          quake:0, quakeWarn:0, quakeNext:CONFIG.quakeEvery, rubbleTimer:0,
+                         lives:CONFIG.lives, invuln:0, cleared:false,
                          wind:0, sand:[], blocks:[], snakes:[], scarabs:[], debris:[] });
   seedProps();
   setBackdrop(0, true);
@@ -2368,6 +2411,8 @@ const SFX = {
   scarab: () => tone(310, 0.15, "triangle", 0.13, 215),
   shield: () => noiseBurst(0.09, 0.12, 2600, 1200),
   hit:    () => { tone(165, 0.5, "sawtooth", 0.26, 42); noiseBurst(0.32, 0.17, 320, 90); },
+  hurt:   () => { tone(230, 0.20, "sawtooth", 0.18, 95); noiseBurst(0.14, 0.11, 420, 170); },
+  clear:  () => { [523,659,784,1047].forEach((f,i) => setTimeout(() => tone(f, 0.5, "triangle", 0.16), i * 140)); },
   ripple: () => { noiseBurst(0.5, 0.24, 2600, 180); tone(95, 0.55, "sine", 0.20, 40); },
   scene:  () => { tone(120, 1.5, "sine", 0.13, 195); tone(182, 1.2, "triangle", 0.05, 245); },
   rumble: () => { tone(58, 2.2, "sine", 0.22, 34); noiseBurst(1.8, 0.14, 150, 60); },
@@ -2403,13 +2448,13 @@ const startView = document.getElementById("startView");
    「どこまで見たか」がそのまま称号になる。280秒＝砂漠の一日を一周。 */
 const TITLES = [
   { at:   0, name:"砂を踏む者" },
-  { at:  20, name:"日没越え" },
-  { at:  40, name:"宵越え" },
-  { at:  60, name:"夜越え" },
-  { at:  80, name:"遺跡に入りし者" },
-  { at: 120, name:"遺跡を抜けし者" },
-  { at: 140, name:"スフィンクスに見えし者" },
-  { at: 200, name:"王墓に至る者" },
+  { at:  14, name:"日没越え" },
+  { at:  28, name:"宵越え" },
+  { at:  42, name:"夜越え" },
+  { at:  56, name:"遺跡に入りし者" },
+  { at:  90, name:"遺跡を抜けし者" },
+  { at: 104, name:"スフィンクスに見えし者" },
+  { at: 130, name:"王墓に至る者" },
 ];
 
 function titleFor(sec){
@@ -2430,6 +2475,8 @@ const overView = document.getElementById("overView");
 const rankView = document.getElementById("rankView");
 const overTc    = document.getElementById("overTc");
 const overTitle = document.getElementById("overTitle");
+const overTitleText = document.getElementById("overTitleText");
+const lifeVal  = document.getElementById("lifeVal");
 const overNext  = document.getElementById("overNext");
 const startBest = document.getElementById("startBest");
 const overRank = document.getElementById("overRank");
@@ -2445,9 +2492,21 @@ function myName(){
   return v || "ななし";
 }
 
+const RANKS = [
+  { min:3, rank:"S", note:"無傷の踏破" },
+  { min:2, rank:"A", note:"ほぼ無傷" },
+  { min:1, rank:"B", note:"辛くも生還" },
+];
+
 function showOver(){
-  overTc.textContent    = toTimecode(state.elapsed);
-  overTitle.textContent = titleFor(state.elapsed);
+  overTitleText.textContent = state.cleared ? "踏 破" : "当たった";
+  overTc.textContent        = toTimecode(state.elapsed);
+  if(state.cleared){
+    const r = RANKS.find(x => state.lives >= x.min) || RANKS[2];
+    overTitle.textContent = r.rank + "　" + r.note;
+  } else {
+    overTitle.textContent = titleFor(state.elapsed);
+  }
 
   // 次の称号までの距離。ここが「もう一回」を押させる一番の理由になる。
   const nx = nextTitle(state.elapsed);
@@ -2481,7 +2540,8 @@ function submitScore(sec){
     method:  "POST",
     mode:    "no-cors",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body:    JSON.stringify({ name: myName(), sec: Math.round(sec * 100) / 100 }),
+    body:    JSON.stringify({ name: myName(), sec: Math.round(sec * 100) / 100,
+                              lives: state.lives, cleared: state.cleared ? 1 : 0 }),
   }).then(() => setTimeout(loadBoard, 1500))
     .catch(() => { overRank.textContent = "記録を送れませんでした"; });
 }
