@@ -229,6 +229,8 @@
    ========================================================== */
 const CONFIG = {
   playerWidth:   40,    // 再生ヘッドの幅（小さくすると難しい）
+  followRate:    20,    // 狙った位置へ寄る速さ。大きいほど操作が直結する
+  windPush:     1.5,    // 砂嵐で流される強さ（風速に対する倍率）
   playerSpeed:   420,   // キーで動かすときの速さ（px/秒）
   blockMinWidth: 26,    // 落ちてくるクリップの最小幅
   blockMaxWidth: 80,    // 　　　　　　　　　　最大幅
@@ -360,6 +362,7 @@ const state = {
   scarabs:    [],   // スカラベ
   debris:     [],   // 切られた／消された破片
   playerX:     0,
+  aimX:        0,   // 動かそうとしている位置。風で実際の位置とずれる
   startTime:   0,
   lastTime:    0,
   spawnTimer:  0,   // 次の出現までの残り秒数。レートぶん速く減る
@@ -414,7 +417,7 @@ addEventListener("keydown", e => {
 addEventListener("keyup", e => { keys[e.key] = false; });
 
 function pointTo(clientX){
-  state.playerX = clientX - cv.getBoundingClientRect().left;
+  state.aimX = clientX - cv.getBoundingClientRect().left;
 }
 cv.addEventListener("pointermove", e => pointTo(e.clientX));
 cv.addEventListener("pointerdown", e => { e.preventDefault(); pointTo(e.clientX); });
@@ -459,6 +462,11 @@ function update(dt, now){
   for(let i = 0; i < SCENES.length; i++) if(state.elapsed >= SCENES[i].at) p = i;
   if(p !== state.phase){
     state.prevPal = SCENES[state.phase].pal || SCENES[p].pal;
+    // 前の場面のものは足早に通り過ぎさせる。溶暗が終わる前に画面から出したい。
+    const nowRuins = SCENES[p].propKind === "ruins";
+    for(const o of state.props){
+      if(!!RUIN_KINDS[o.kind] !== nowRuins){ o.rush = 5; o.slow = 1; }
+    }
     state.phase = p; state.phaseAt = state.elapsed; state.phaseLabel = 3.0;
     setBackdrop(p, false);
     SFX.scene();
@@ -481,9 +489,15 @@ function update(dt, now){
   }
 
   // 再生ヘッドを動かす
-  if(keys.ArrowLeft)  state.playerX -= CONFIG.playerSpeed * dt;
-  if(keys.ArrowRight) state.playerX += CONFIG.playerSpeed * dt;
+  if(keys.ArrowLeft)  state.aimX -= CONFIG.playerSpeed * dt;
+  if(keys.ArrowRight) state.aimX += CONFIG.playerSpeed * dt;
   const half = CONFIG.playerWidth / 2;
+  state.aimX = Math.max(half, Math.min(W - half, state.aimX));
+
+  // 狙った位置へ寄せてから、砂嵐の風で流す。
+  // 風に逆らって指を置き続けないと、じわじわ持っていかれる。
+  state.playerX += (state.aimX - state.playerX) * Math.min(1, dt * CONFIG.followRate);
+  if(state.storm > 0) state.playerX += state.wind * CONFIG.windPush * stormIntensity() * dt;
   state.playerX = Math.max(half, Math.min(W - half, state.playerX));
 
   spawn(dt, r);
@@ -718,11 +732,11 @@ function quakeShake(){ return quakeLevel() * 5.5; }
 
 /* 落ちてくる石。赤と同じ扱いにしてあるので、シールドもハサミもヘビも効く。 */
 function spawnRubble(d){
-  const w = 15 + Math.random() * 24;
+  const w = 26 + Math.random() * 26;             // 見えない大きさで即死は理不尽なので大きめに
   state.blocks.push({
     x: Math.random() * (W - w), y: -34,
-    w: w, h: w * 0.78,
-    speed: fallSpeed(d) * 1.45 + 90,
+    w: w, h: w * 0.80,
+    speed: fallSpeed(d) * 1.20 + 70,
     kind: "red", rock: true, held: false, vx: 0,
   });
 }
@@ -1384,9 +1398,18 @@ function spawnLandmark(){
 }
 
 function updateProps(step){
+  // 場面が変わりきったら、前の場面のものは残さない。
+  // 遺跡にピラミッドが残ったり、砂漠にアヌビス像が居座ったりするのを防ぐ。
+  const wantRuins = SCENES[state.phase].propKind === "ruins";
+  if(bdFade >= 1){
+    for(let i = state.props.length - 1; i >= 0; i--){
+      if(!!RUIN_KINDS[state.props[i].kind] !== wantRuins) state.props.splice(i, 1);
+    }
+  }
+
   for(let i = state.props.length - 1; i >= 0; i--){
     const o = state.props[i];
-    o.z += step * CONFIG.travelSpeed * (o.slow || 1);
+    o.z += step * CONFIG.travelSpeed * (o.slow || 1) * (o.rush || 1);
     if(o.z > 1.08) state.props.splice(i, 1);
   }
   state.propTimer -= step * CONFIG.travelSpeed;
@@ -2113,7 +2136,7 @@ function start(){
   btn.hidden = false;
   Object.assign(state, {
     running:true, blocks:[], snakes:[], scarabs:[], debris:[],
-    playerX:W / 2, elapsed:0, difficulty:0, sinceItem:0, redCount:0,
+    playerX:W / 2, aimX:W / 2, elapsed:0, difficulty:0, sinceItem:0, redCount:0,
     speedScale:1, shield:0, scissors:0, rippleCd:0, flash:0,
     phase:0, phaseLabel:0, phaseAt:0,
     storm:0, stormWarn:0, stormNext:CONFIG.stormEvery, wind:0, sand:[], travel:0,
@@ -2155,7 +2178,7 @@ document.getElementById("chipRipple").addEventListener("click", e => {
    「もう一度」はここへ戻す（いきなり始めない）。 */
 function showStart(){
   state.running = false;
-  Object.assign(state, { elapsed:0, difficulty:0, sinceItem:0, redCount:0,
+  Object.assign(state, { elapsed:0, difficulty:0, sinceItem:0, redCount:0, aimX:W / 2, playerX:W / 2,
                          speedScale:1, shield:0, scissors:0, rippleCd:0, flash:0,
                          phase:0, phaseLabel:0, phaseAt:0,
                          storm:0, stormWarn:0, stormNext:CONFIG.stormEvery, travel:0,
