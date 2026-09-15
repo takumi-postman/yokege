@@ -298,6 +298,7 @@ const CONFIG = {
   // --- 歩く速さ ---
   travelSpeed: 0.095,   // 地平線から足元まで約10秒。歩いている速さ。
   propEvery:   0.055,   // 景色のものが生まれる間隔（travel 単位）
+  landmarkLead:  25,    // 目印を何秒前に地平線へ置くか（着く頃に画面いっぱいになる）
 
   // --- 時間帯 ---
   phaseEvery:   35,     // 何秒ごとに時間帯が変わるか（8つで一周＝4分40秒）
@@ -371,6 +372,7 @@ const state = {
   travel:      0,   // どれだけ歩いたか。景色と地面を流すのに使う
   props:      [],   // いま見えている風景のもの（ヤシ・オアシス・岩・ピラミッド）
   propTimer:   0,   // 次に何かが生まれるまで
+  landmarkFor:-1,   // どの場面ぶんの目印をもう置いたか
   speedScale:  1,   // 緑による減速（0.45〜1）
   shield:      0,   // シールドの残り秒数
   scissors:    0,   // ハサミの残り本数。1本につき赤1個ぶん耐えられる
@@ -430,6 +432,15 @@ function update(dt, now){
   state.sinceItem  += dt;
   state.travel     += dt * r * CONFIG.travelSpeed;   // 減速すると景色もゆっくり流れる
   updateProps(dt * r);
+
+  // 次の場面が近づいたら、地平線に目印を置く。
+  // 「時間が来たから変わる」ではなく「歩いて着いたから変わる」ようにするため。
+  const nextScene = SCENES[state.phase + 1];
+  if(nextScene && SCENES[state.phase].pal && state.landmarkFor !== state.phase + 1
+     && state.elapsed > nextScene.at - CONFIG.landmarkLead){
+    state.props.push(spawnLandmark());
+    state.landmarkFor = state.phase + 1;
+  }
   state.redCount    = countReds();
 
   // 場面を進める。周回ではなく、旅として前へ進む。最後まで行ったらそこで留まる。
@@ -1224,7 +1235,7 @@ function spawnLandmark(){
 function updateProps(step){
   for(let i = state.props.length - 1; i >= 0; i--){
     const o = state.props[i];
-    o.z += step * CONFIG.travelSpeed * (o.slow || 1) / CONFIG.travelSpeed * CONFIG.travelSpeed;
+    o.z += step * CONFIG.travelSpeed * (o.slow || 1);
     if(o.z > 1.08) state.props.splice(i, 1);
   }
   state.propTimer -= step * CONFIG.travelSpeed;
@@ -1365,32 +1376,10 @@ function paintDesert(g, P){
   g.beginPath(); g.arc(ox, oy, H * P.orb.r, 0, Math.PI * 2); g.fill();
 
   // ピラミッド（このあと砂丘に足元を隠される）
-  pyramid(g, W * .30, H * .640, W * .17, H * .120, P.pyr[0], P.pyr[1]);
-  pyramid(g, W * .43, H * .640, W * .12, H * .084, P.pyr[0], P.pyr[1]);
-
-  // 砂丘（奥 → 手前）。手前ほど暗くして、再生ヘッドが沈まないようにする。
-  ridge(g, [[0,.615],[.18,.585],[.38,.625],[.58,.590],[.78,.620],[1,.600]], P.dune[0]);
-  oasis(g, W * .20, H * .672, W * .19, H * .028, P.water);
-  palm (g, W * .11, H * .668, H * .105, P.veg[0]);
-  palm (g, W * .30, H * .670, H * .092, P.veg[0]);
-  tuft (g, W * .25, H * .676, H * .028, P.veg[0]);
-
-  ridge(g, [[0,.700],[.22,.735],[.45,.690],[.68,.730],[.88,.695],[1,.715]], P.dune[1]);
-  oasis(g, W * .68, H * .790, W * .26, H * .040, P.water);
-  palm (g, W * .55, H * .784, H * .140, P.veg[1]);
-  palm (g, W * .82, H * .786, H * .120, P.veg[1]);
-  palm (g, W * .75, H * .780, H * .098, P.veg[1]);
-  tuft (g, W * .60, H * .800, H * .040, P.veg[1]);
-  tuft (g, W * .88, H * .796, H * .034, P.veg[1]);
-  tuft (g, W * .12, H * .746, H * .030, P.veg[1]);
-
-  ridge(g, [[0,.830],[.25,.860],[.52,.820],[.76,.855],[1,.828]], P.dune[2]);
-  oasis(g, W * .16, H * .900, W * .17, H * .030, P.water);
-  palm (g, W * .06, H * .896, H * .115, P.veg[2]);
-  palm (g, W * .27, H * .898, H * .095, P.veg[2]);
-  tuft (g, W * .42, H * .880, H * .034, P.veg[2]);
-  tuft (g, W * .64, H * .900, H * .030, P.veg[2]);
-  tuft (g, W * .90, H * .885, H * .036, P.veg[2]);
+  // 遠くの砂丘だけ焼いておく。ヤシもオアシスもピラミッドも、
+  // ここから先は毎フレーム生まれ直すので、ここには描かない。
+  ridge(g, [[0,.598],[.24,.584],[.50,.610],[.76,.590],[1,.604]], P.dune[0]);
+  ridge(g, [[0,.628],[.32,.646],[.66,.622],[1,.640]], P.dune[1]);
 
   const floor = g.createLinearGradient(0, H * 0.90, 0, H);
   floor.addColorStop(0, "rgba(8,5,5,0)");
@@ -1961,7 +1950,9 @@ function start(){
     speedScale:1, shield:0, scissors:0, rippleCd:0, flash:0,
     phase:0, phaseLabel:0, phaseAt:0,
     storm:0, stormWarn:0, stormNext:CONFIG.stormEvery, wind:0, sand:[], travel:0,
+    props:[], propTimer:0, landmarkFor:-1,
   });
+  seedProps();
   setBackdrop(0, true);
   state.startTime = state.lastTime = performance.now();
   state.spawnTimer = 0.4;
@@ -2000,7 +1991,9 @@ function showStart(){
                          speedScale:1, shield:0, scissors:0, rippleCd:0, flash:0,
                          phase:0, phaseLabel:0, phaseAt:0,
                          storm:0, stormWarn:0, stormNext:CONFIG.stormEvery, travel:0,
+                         props:[], propTimer:0, landmarkFor:-1,
                          wind:0, sand:[], blocks:[], snakes:[], scarabs:[], debris:[] });
+  seedProps();
   setBackdrop(0, true);
   hideVeils();
   startBest.textContent = "";
@@ -2396,6 +2389,7 @@ if(recArg !== null){
 /* 起動 */
 document.getElementById("best").textContent = toTimecode(best);
 updateHud();
+seedProps();
 resize();
 showStart();
 if(document.fonts) document.fonts.ready.then(() => { if(!state.running) drawTitle(); });
