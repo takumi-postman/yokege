@@ -229,9 +229,6 @@
    ========================================================== */
 const CONFIG = {
   playerWidth:   40,    // 再生ヘッドの幅（小さくすると難しい）
-  windPush:     1.2,    // 砂嵐で押し流される強さ（風速に対する倍率）
-  driftMax:    0.28,    // 押し流される上限（画面幅に対する割合）
-  driftBack:    1.8,    // 嵐が止んだあと、ずれが戻る速さ
   playerSpeed:   420,   // キーで動かすときの速さ（px/秒）
   blockMinWidth: 26,    // 落ちてくるクリップの最小幅
   blockMaxWidth: 80,    // 　　　　　　　　　　最大幅
@@ -365,7 +362,6 @@ const state = {
   debris:     [],   // 切られた／消された破片
   playerX:     0,
   aimX:        0,   // 動かそうとしている位置
-  drift:       0,   // 風に押されて溜まったずれ。指の位置からこれだけ離れる
   startTime:   0,
   lastTime:    0,
   spawnTimer:  0,   // 次の出現までの残り秒数。レートぶん速く減る
@@ -496,16 +492,9 @@ function update(dt, now){
   const half = CONFIG.playerWidth / 2;
   state.aimX = Math.max(half, Math.min(W - half, state.aimX));
 
-  // 砂嵐に押される。指を置いたままだと、ずれがどんどん溜まって流されていく。
-  // 逆らうには、風上へ指をずらし続けるしかない。
-  if(state.storm > 0){
-    state.drift += state.wind * CONFIG.windPush * stormIntensity() * dt;
-    const cap = W * CONFIG.driftMax;
-    state.drift = Math.max(-cap, Math.min(cap, state.drift));
-  } else {
-    state.drift *= Math.max(0, 1 - dt * CONFIG.driftBack);      // 止んだら戻る
-  }
-  state.playerX = Math.max(half, Math.min(W - half, state.aimX + state.drift));
+  // 指やマウスの位置に直結させる。
+  // ここをずらすと、カーソルと自機が合わなくなって距離感が狂い、操作できなくなる。
+  state.playerX = Math.max(half, Math.min(W - half, state.aimX));
 
   spawn(dt, r);
   updateSnakes(dt, r);
@@ -640,11 +629,13 @@ function updateSand(dt){
   }
 }
 
-/* 砂ぼこりの膜。背景の上、クリップの下に敷く。 */
+/* 砂ぼこりの膜。落ちてくるものより手前に重ねて、視界そのものを奪う。
+   突風で濃さが上下するので、見える瞬間と見えない瞬間が交互に来る。 */
 function drawSandHaze(){
   const k = stormIntensity();
   if(k <= 0) return;
-  ctx.fillStyle = "rgba(198,152,98," + (0.17 * k).toFixed(3) + ")";
+  const gust = 0.70 + 0.30 * Math.sin(performance.now() / 850);
+  ctx.fillStyle = "rgba(198,152,98," + (0.30 * k * gust).toFixed(3) + ")";
   ctx.fillRect(0, 0, W, H);
 }
 
@@ -672,7 +663,7 @@ function drawAlert(){
   const quaking = state.quakeWarn > 0 || (state.quake > CONFIG.quakeTime - 2.0);
   const blowing = state.stormWarn > 0 || (state.storm > CONFIG.stormTime - 2.0);
   const A = quaking ? { label:"崩 落", hint:"落ちてくる石を避けろ" }
-          : blowing ? { label:"砂 嵐", hint:"風に流される　踏ん張れ" } : null;
+          : blowing ? { label:"砂 嵐", hint:"視界が塞がる　見失うな" } : null;
   if(!A) return;
   const label = A.label;
   const pulse = 0.45 + 0.55 * Math.abs(Math.sin(performance.now() / 105));
@@ -1029,7 +1020,6 @@ function draw(){
   drawProps(livePal());
   drawRuinProps();
   drawGround(SCENES[state.phase].ground);
-  drawSandHaze();
 
   for(const b of state.blocks) drawBlock(b);
   drawDebris();
@@ -1038,6 +1028,7 @@ function draw(){
   drawPlayer(state.playerX);
   drawCutPips();
   drawShield();
+  drawSandHaze();          // ← ブロックもアイテムも、この砂の向こうになる
   drawSandStreaks();
   drawPanicEdge();
   drawPhaseLabel();
@@ -2184,7 +2175,7 @@ function start(){
   btn.hidden = false;
   Object.assign(state, {
     running:true, blocks:[], snakes:[], scarabs:[], debris:[],
-    playerX:W / 2, aimX:W / 2, drift:0, elapsed:0, difficulty:0, sinceItem:0, redCount:0,
+    playerX:W / 2, aimX:W / 2, elapsed:0, difficulty:0, sinceItem:0, redCount:0,
     speedScale:1, shield:0, scissors:0, rippleCd:0, flash:0,
     phase:0, phaseLabel:0, phaseAt:0,
     storm:0, stormWarn:0, stormNext:CONFIG.stormEvery, wind:0, sand:[], travel:0,
@@ -2226,7 +2217,7 @@ document.getElementById("chipRipple").addEventListener("click", e => {
    「もう一度」はここへ戻す（いきなり始めない）。 */
 function showStart(){
   state.running = false;
-  Object.assign(state, { elapsed:0, difficulty:0, sinceItem:0, redCount:0, aimX:W / 2, playerX:W / 2, drift:0,
+  Object.assign(state, { elapsed:0, difficulty:0, sinceItem:0, redCount:0, aimX:W / 2, playerX:W / 2,
                          speedScale:1, shield:0, scissors:0, rippleCd:0, flash:0,
                          phase:0, phaseLabel:0, phaseAt:0,
                          storm:0, stormWarn:0, stormNext:CONFIG.stormEvery, travel:0,
