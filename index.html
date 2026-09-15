@@ -455,7 +455,7 @@ function update(dt, now){
   const nextScene = SCENES[state.phase + 1];
   if(nextScene && SCENES[state.phase].pal && state.landmarkFor !== state.phase + 1
      && state.elapsed > nextScene.at - CONFIG.landmarkLead){
-    state.props.push(spawnLandmark());
+    state.props.push(spawnLandmark(nextScene.landmark));
     state.landmarkFor = state.phase + 1;
   }
   state.redCount    = countReds();
@@ -1332,7 +1332,7 @@ const SCENES = [
   { at:  60, label:"夜",         ground:"sand", pal:PHASES[3], paint:g => paintDesert(g, PHASES[3]) },
   { at:  80, label:"古代遺跡",   ground:"stone", indoor:true, propKind:"ruins", pal:RUIN_PAL, paint:paintRuins },
   { at: 120, label:"薄明",       ground:"sand", pal:PHASES[4], paint:g => paintDesert(g, PHASES[4]) },
-  { at: 140, label:"スフィンクス", ground:"sandFar", pal:PHASES[5], paint:paintSphinx },
+  { at: 140, label:"スフィンクス", ground:"sandFar", pal:PHASES[5], landmark:"sphinx", paint:paintSphinx },
   { at: 200, label:"王墓",       ground:"slab",  indoor:true,   paint:paintChamber },
 ];
 
@@ -1418,8 +1418,9 @@ function spawnProp(){
 
 /* 目印。場面が変わる少し前に地平線へ置く。
    遠くて大きいものは近づくのが遅く見えるので、進みを半分にしてある。 */
-function spawnLandmark(){
-  return { kind:"pyramid", z:0, x:0.5, big:4.2, slow:0.42,
+function spawnLandmark(kind){
+  return { kind: kind || "pyramid", z:0, x:0.5,
+           big: kind === "sphinx" ? 3.0 : 4.2, slow:0.42,
            dir: Math.random() < 0.5 ? -1 : 1,   // どちら側へ外れていくか
            exit: 1.8 };                          // 画面の外へ抜けきるまで消さない
 }
@@ -1494,6 +1495,8 @@ function drawProps(P){
       ctx.closePath(); ctx.fill();
     } else if(o.kind === "pyramid"){
       pyramid(ctx, x, y, W * 0.11 * sc, H * 0.11 * sc, P.pyr[0], P.pyr[1]);
+    } else if(o.kind === "sphinx"){
+      sphinxFront(ctx, x, y, H * 0.13 * sc, P.pyr);
     }
     ctx.restore();
   }
@@ -1661,7 +1664,6 @@ function paintSphinx(g){
 
   // ピラミッドもヤシも、ここから先は毎フレーム流れてくるので焼き込まない。
   ridge(g, [[0,.715],[.30,.700],[.62,.720],[1,.705]], "#8a5f3a");
-  sphinx(g, W * 0.50, H * 0.80, H * 0.50);
   ridge(g, [[0,.860],[.34,.882],[.70,.856],[1,.874]], "#4e3320");
 
   const floor = g.createLinearGradient(0, H * 0.86, 0, H);
@@ -1670,70 +1672,73 @@ function paintSphinx(g){
   g.fillStyle = floor; g.fillRect(0, H * 0.86, W, H * 0.14);
 }
 
-/* スフィンクス本体。右を向いて伏せている。 */
-function sphinx(g, cx, baseY, h){
-  const S = "#8a5c36", L = "#caa063", D = "#583823", GOLD = "#e3bb72";
-  g.save();
-  g.translate(cx, baseY);
+/* スフィンクス（正面）。こちらを向いて座っている。
+   ネメス頭巾が肩へ大きく広がる台形と、その真ん中の顔。
+   この形は横顔よりも正面のほうが分かりやすいので、向かってくる姿にした。 */
+function sphinxFront(g, cx, baseY, h, pal){
+  const S = pal ? pal[1] : "#7b5331";        // 石の影側
+  const L = pal ? pal[0] : "#b8854f";        // 光の当たる側
+  const D = "#3d2716";
+  const GOLD = "#e3bb72";
 
-  g.fillStyle = D;                                   // 前脚
-  g.beginPath();
-  g.moveTo(0.16 * h, 0);
-  g.lineTo(0.78 * h, 0);
-  g.lineTo(0.78 * h, -0.09 * h);
-  g.quadraticCurveTo(0.52 * h, -0.15 * h, 0.22 * h, -0.20 * h);
-  g.closePath(); g.fill();
+  // 前脚を左右に
+  for(const sx of [-1, 1]){
+    g.fillStyle = sx < 0 ? L : S;
+    g.fillRect(cx + sx * 0.36 * h - 0.13 * h, baseY - 0.27 * h, 0.26 * h, 0.27 * h);
+    g.fillStyle = D;
+    for(let i = 1; i <= 2; i++){
+      g.fillRect(cx + sx * 0.36 * h - 0.13 * h + i * 0.086 * h, baseY - 0.10 * h, 0.014 * h, 0.10 * h);
+    }
+  }
 
-  g.fillStyle = S;                                   // 伏せた胴
-  g.beginPath();
-  g.moveTo(-0.80 * h, 0);
-  g.lineTo( 0.30 * h, 0);
-  g.lineTo( 0.30 * h, -0.36 * h);
-  g.quadraticCurveTo(0.28 * h, -0.50 * h, 0.14 * h, -0.54 * h);
-  g.lineTo(-0.34 * h, -0.46 * h);
-  g.quadraticCurveTo(-0.74 * h, -0.42 * h, -0.80 * h, 0);
-  g.closePath(); g.fill();
-
-  g.fillStyle = L;                                   // 朝日の当たる背
-  g.beginPath();
-  g.moveTo(-0.34 * h, -0.46 * h);
-  g.lineTo( 0.14 * h, -0.54 * h);
-  g.quadraticCurveTo(0.28 * h, -0.50 * h, 0.30 * h, -0.36 * h);
-  g.lineTo( 0.30 * h, -0.30 * h);
-  g.lineTo(-0.34 * h, -0.40 * h);
-  g.closePath(); g.fill();
-
-  // ネメス頭巾。肩へ広がる台形が、スフィンクスだと分からせる決め手。
+  // 胴
   g.fillStyle = S;
   g.beginPath();
-  g.moveTo(-0.10 * h, -0.44 * h);
-  g.lineTo(-0.04 * h, -0.80 * h);
-  g.quadraticCurveTo(0.06 * h, -0.94 * h, 0.20 * h, -0.88 * h);
-  g.lineTo( 0.26 * h, -0.50 * h);
-  g.lineTo( 0.10 * h, -0.42 * h);
+  g.moveTo(cx - 0.30 * h, baseY);
+  g.lineTo(cx + 0.30 * h, baseY);
+  g.lineTo(cx + 0.35 * h, baseY - 0.44 * h);
+  g.lineTo(cx - 0.35 * h, baseY - 0.44 * h);
   g.closePath(); g.fill();
+  g.fillStyle = L;
+  g.fillRect(cx - 0.35 * h, baseY - 0.44 * h, 0.23 * h, 0.44 * h);
 
-  g.fillStyle = L;                                   // 顔（横顔）
-  g.beginPath();
-  g.moveTo( 0.20 * h, -0.86 * h);
-  g.quadraticCurveTo(0.32 * h, -0.80 * h, 0.30 * h, -0.71 * h);
-  g.lineTo( 0.33 * h, -0.67 * h);                    // 鼻先
-  g.lineTo( 0.27 * h, -0.63 * h);
-  g.quadraticCurveTo(0.28 * h, -0.55 * h, 0.22 * h, -0.52 * h);
-  g.lineTo( 0.18 * h, -0.84 * h);
-  g.closePath(); g.fill();
-
-  g.fillStyle = GOLD;                                // 頭巾の帯とウラエウス
-  g.fillRect(-0.06 * h, -0.84 * h, 0.26 * h, 0.035 * h);
-  g.beginPath();
-  g.arc(0.19 * h, -0.90 * h, 0.028 * h, 0, Math.PI * 2);
-  g.fill();
-  g.fillStyle = D;                                   // 目
-  g.beginPath();
-  g.arc(0.255 * h, -0.745 * h, 0.017 * h, 0, Math.PI * 2);
-  g.fill();
-
+  // ネメス頭巾。肩へ広がる台形。
+  const nemes = () => {
+    g.beginPath();
+    g.moveTo(cx - 0.45 * h, baseY - 0.40 * h);
+    g.lineTo(cx - 0.27 * h, baseY - 0.88 * h);
+    g.quadraticCurveTo(cx, baseY - 1.00 * h, cx + 0.27 * h, baseY - 0.88 * h);
+    g.lineTo(cx + 0.45 * h, baseY - 0.40 * h);
+    g.closePath();
+  };
+  g.fillStyle = S; nemes(); g.fill();
+  g.save(); nemes(); g.clip();                 // 左半分だけ明るく
+  g.fillStyle = L; g.fillRect(cx - 0.5 * h, baseY - 1.05 * h, 0.5 * h, 0.7 * h);
   g.restore();
+
+  // 頭巾の縞
+  g.fillStyle = D;
+  for(let i = 0; i < 5; i++){
+    const yy = baseY - (0.46 + i * 0.082) * h;
+    const wr = 0.44 - i * 0.033;
+    g.fillRect(cx - wr * h,            yy, 0.12 * h, 0.020 * h);
+    g.fillRect(cx + wr * h - 0.12 * h, yy, 0.12 * h, 0.020 * h);
+  }
+
+  // 顔
+  g.fillStyle = L;
+  g.beginPath(); g.ellipse(cx, baseY - 0.70 * h, 0.17 * h, 0.21 * h, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = D;
+  g.beginPath(); g.ellipse(cx - 0.072*h, baseY - 0.765*h, 0.034*h, 0.019*h, 0, 0, Math.PI*2); g.fill();
+  g.beginPath(); g.ellipse(cx + 0.072*h, baseY - 0.765*h, 0.034*h, 0.019*h, 0, 0, Math.PI*2); g.fill();
+  g.fillRect(cx - 0.055 * h, baseY - 0.640 * h, 0.11 * h, 0.014 * h);
+
+  // 付け髭・胸飾り・額のウラエウス
+  g.fillStyle = S;
+  g.fillRect(cx - 0.036 * h, baseY - 0.575 * h, 0.072 * h, 0.13 * h);
+  g.fillStyle = GOLD;
+  g.fillRect(cx - 0.21 * h, baseY - 0.455 * h, 0.42 * h, 0.028 * h);
+  g.beginPath(); g.arc(cx, baseY - 0.878 * h, 0.030 * h, 0, Math.PI * 2); g.fill();
 }
 
 /* 王墓の玄室。旅の終点。光源は高窓から差す一条だけ。 */
