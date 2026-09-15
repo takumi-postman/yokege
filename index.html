@@ -634,9 +634,29 @@ function updateSand(dt){
 function drawSandHaze(){
   const k = stormIntensity();
   if(k <= 0) return;
-  const gust = 0.70 + 0.30 * Math.sin(performance.now() / 850);
-  ctx.fillStyle = "rgba(198,152,98," + (0.30 * k * gust).toFixed(3) + ")";
+  const dir = Math.sign(state.wind) || 1;
+  const t   = performance.now() / 1000;
+
+  // 全体にかかる薄い膜
+  const gust = 0.70 + 0.30 * Math.sin(t * 1.15);
+  ctx.fillStyle = "rgba(198,152,98," + (0.22 * k * gust).toFixed(3) + ")";
   ctx.fillRect(0, 0, W, H);
+
+  // 濃い砂の塊が風下へ横切る。均一に薄くかけても視界は塞がらないので、
+  // 通っている間は本当に見えない、抜けると見える、という濃淡を作る。
+  for(let i = 0; i < 3; i++){
+    const span = 5.5 + i * 1.8;                        // 何秒で画面を横切るか
+    const q  = ((t / span) + i * 0.37) % 1;
+    const cx = dir > 0 ? -W * 0.45 + q * W * 1.9 : W * 1.45 - q * W * 1.9;
+    const cy = H * (0.32 + 0.20 * Math.sin(t * 0.7 + i * 2.1));
+    const r  = W * (0.33 + 0.09 * Math.sin(t * 0.9 + i));
+    const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grd.addColorStop(0,    "rgba(208,166,112," + (0.42 * k).toFixed(3) + ")");
+    grd.addColorStop(0.55, "rgba(208,166,112," + (0.22 * k).toFixed(3) + ")");
+    grd.addColorStop(1,    "rgba(208,166,112,0)");
+    ctx.fillStyle = grd;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  }
 }
 
 /* 流れる砂。いちばん手前に描いて、風が吹き抜けている感じを出す。 */
