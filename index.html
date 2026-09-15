@@ -303,6 +303,12 @@ const CONFIG = {
   // --- 時間帯 ---
   phaseEvery:   35,     // 何秒ごとに時間帯が変わるか（8つで一周＝4分40秒）
 
+  // --- 遺跡の崩落 ---
+  quakeEvery:   24,     // 崩落と崩落のあいだの秒数
+  quakeWarn:   2.2,     // 揺れはじめ（予告）の秒数
+  quakeTime:    10,     // 崩れ続ける秒数
+  rubbleEvery: 0.40,    // 崩落中、何秒ごとに石が落ちるか
+
   // --- 砂嵐 ---
   stormEvery:   45,     // 嵐が終わってから、次の予兆までの秒数
   stormWarn:   2.5,     // 吹きはじめ（予告）の秒数
@@ -374,6 +380,10 @@ const state = {
   propTimer:   0,   // 次に何かが生まれるまで
   landmarkFor:-1,   // どの場面ぶんの目印をもう置いたか
   prevPal:  null,   // ひとつ前の場面の色。移り変わるあいだ混ぜるのに使う
+  quake:       0,   // 崩落の残り秒数
+  quakeWarn:   0,   // 予兆の残り秒数
+  quakeNext:   0,   // 次の崩落までの残り秒数
+  rubbleTimer: 0,   // 次に石が落ちるまで
   speedScale:  1,   // 緑による減速（0.45〜1）
   shield:      0,   // シールドの残り秒数
   scissors:    0,   // ハサミの残り本数。1本につき赤1個ぶん耐えられる
@@ -457,6 +467,7 @@ function update(dt, now){
   if(bdFade < 1) bdFade = Math.min(1, bdFade + dt / 3.6);   // ゆっくり溶かす
 
   updateStorm(dt);
+  updateQuake(dt, r, state.difficulty);
 
   // 持続するものを減らす
   state.speedScale = Math.min(1, state.speedScale + CONFIG.slowRecover * dt);
@@ -634,17 +645,104 @@ function drawSandStreaks(){
   ctx.restore();
 }
 
-/* 予兆のあいだ「砂嵐」と出す。来ると分かっていれば理不尽にならない。 */
-function drawStormWarn(){
-  if(state.stormWarn <= 0) return;
-  const t = 1 - state.stormWarn / CONFIG.stormWarn;
+/* 危ないものが来る合図。何が来るかを字で、来ること自体を赤で伝える。 */
+function drawAlert(){
+  const label = state.quakeWarn > 0 ? "崩 落" : (state.stormWarn > 0 ? "砂 嵐" : null);
+  if(!label) return;
+  const pulse = 0.45 + 0.55 * Math.abs(Math.sin(performance.now() / 105));
+
   ctx.save();
-  ctx.globalAlpha = 0.35 + 0.55 * Math.abs(Math.sin(t * Math.PI * 3));
+  ctx.globalAlpha = pulse;
+
+  ctx.strokeStyle = "#ff4b3e";                     // 画面のふちが赤く脈打つ
+  ctx.lineWidth = 5;
+  ctx.strokeRect(2.5, 2.5, W - 5, H - 5);
+
   ctx.textAlign = "center";
-  ctx.fillStyle = "#f2d9a8";
-  ctx.font = '800 25px "M PLUS 1p", sans-serif';
-  ctx.fillText("砂 嵐", W / 2, H * 0.44);
+  ctx.fillStyle = "#ff5f52";
+  ctx.font = '800 27px "M PLUS 1p", sans-serif';
+  ctx.fillText(label, W / 2, H * 0.44);
+
+  const half = ctx.measureText(label).width / 2;   // 両脇に警告マーク
+  warnMark(W / 2 - half - 34, H * 0.415, 17);
+  warnMark(W / 2 + half + 34, H * 0.415, 17);
   ctx.restore();
+}
+
+/* 赤い三角のビックリマーク */
+function warnMark(x, y, r){
+  ctx.fillStyle = "#ff4b3e";
+  ctx.beginPath();
+  ctx.moveTo(x, y - r);
+  ctx.lineTo(x + r * 0.95, y + r * 0.74);
+  ctx.lineTo(x - r * 0.95, y + r * 0.74);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#1a0b09";
+  ctx.fillRect(x - r * 0.11, y - r * 0.40, r * 0.22, r * 0.72);
+  ctx.beginPath(); ctx.arc(x, y + r * 0.50, r * 0.13, 0, Math.PI * 2); ctx.fill();
+}
+
+/* --- 遺跡の崩落 ------------------------------------------ */
+/* 砂嵐の代わりに、遺跡の中だけで起きる。天井が揺れて石が降ってくる。 */
+function updateQuake(dt, r, d){
+  if(SCENES[state.phase].propKind !== "ruins"){
+    state.quake = 0; state.quakeWarn = 0; state.quakeNext = CONFIG.quakeEvery;
+    return;
+  }
+  if(state.quake > 0){
+    state.quake -= dt;
+    if(state.quake <= 0){ state.quake = 0; state.quakeNext = CONFIG.quakeEvery; return; }
+    state.rubbleTimer -= dt * r;
+    if(state.rubbleTimer <= 0){
+      spawnRubble(d);
+      state.rubbleTimer = CONFIG.rubbleEvery * (0.55 + Math.random() * 0.9);
+    }
+  } else if(state.quakeWarn > 0){
+    state.quakeWarn -= dt;
+    if(state.quakeWarn <= 0){ state.quake = CONFIG.quakeTime; state.rubbleTimer = 0; }
+  } else {
+    state.quakeNext -= dt;
+    if(state.quakeNext <= 0){ state.quakeWarn = CONFIG.quakeWarn; SFX.rumble(); }
+  }
+}
+
+/* 崩落の強さ 0〜1。入りと抜けをなめらかに。 */
+function quakeLevel(){
+  if(state.quakeWarn > 0) return 0.45 * (1 - state.quakeWarn / CONFIG.quakeWarn);
+  if(state.quake <= 0) return 0;
+  return Math.min(1, (CONFIG.quakeTime - state.quake) / 1.5, state.quake / 2);
+}
+
+/* 画面の揺れ幅 */
+function quakeShake(){ return quakeLevel() * 5.5; }
+
+/* 落ちてくる石。赤と同じ扱いにしてあるので、シールドもハサミもヘビも効く。 */
+function spawnRubble(d){
+  const w = 15 + Math.random() * 24;
+  state.blocks.push({
+    x: Math.random() * (W - w), y: -34,
+    w: w, h: w * 0.78,
+    speed: fallSpeed(d) * 1.45 + 90,
+    kind: "red", rock: true, held: false, vx: 0,
+  });
+}
+
+function drawRock(b){
+  ctx.fillStyle = "#6a5642";
+  ctx.beginPath();
+  ctx.moveTo(b.x,              b.y + b.h * 0.45);
+  ctx.lineTo(b.x + b.w * 0.28, b.y);
+  ctx.lineTo(b.x + b.w * 0.80, b.y + b.h * 0.12);
+  ctx.lineTo(b.x + b.w,        b.y + b.h * 0.62);
+  ctx.lineTo(b.x + b.w * 0.55, b.y + b.h);
+  ctx.lineTo(b.x + b.w * 0.12, b.y + b.h * 0.86);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#8d7459";                       // 光の当たる面
+  ctx.beginPath();
+  ctx.moveTo(b.x + b.w * 0.28, b.y);
+  ctx.lineTo(b.x + b.w * 0.80, b.y + b.h * 0.12);
+  ctx.lineTo(b.x + b.w * 0.45, b.y + b.h * 0.42);
+  ctx.closePath(); ctx.fill();
 }
 
 /* --- 出現 ------------------------------------------------ */
@@ -886,6 +984,9 @@ function rippleDelete(){
    7. 描画
    ========================================================== */
 function draw(){
+  ctx.save();
+  const shake = quakeShake();                      // 崩落のあいだ画面が揺れる
+  if(shake) ctx.translate((Math.random() * 2 - 1) * shake, (Math.random() * 2 - 1) * shake);
   paintBackdrop();
   drawProps(livePal());
   drawRuinProps();
@@ -902,11 +1003,12 @@ function draw(){
   drawSandStreaks();
   drawPanicEdge();
   drawPhaseLabel();
-  drawStormWarn();
+  drawAlert();
   if(state.flash > 0){
     ctx.fillStyle = "rgba(230,242,255," + (state.flash / 0.35 * 0.38).toFixed(3) + ")";
     ctx.fillRect(0, 0, W, H);
   }
+  ctx.restore();
   updateHud();
 }
 
@@ -916,6 +1018,7 @@ function drawBlock(b){
   if(b.kind === "scissors") return drawScissors(b.x, b.y, b.w, b.h);
   if(b.kind === "scarab")   return drawScarab(b.x, b.y, b.w, b.h);
   if(b.kind === "fake")     return drawFake(b);
+  if(b.rock)                return drawRock(b);
   if(b.homing){                                // お礼の減速。混戦でも見つけられるように光らせる
     ctx.save();
     ctx.globalAlpha = 0.30 + 0.28 * Math.sin(performance.now() / 160);
@@ -2014,7 +2117,8 @@ function start(){
     speedScale:1, shield:0, scissors:0, rippleCd:0, flash:0,
     phase:0, phaseLabel:0, phaseAt:0,
     storm:0, stormWarn:0, stormNext:CONFIG.stormEvery, wind:0, sand:[], travel:0,
-    props:[], propTimer:0, landmarkFor:-1,
+    props:[], propTimer:0, landmarkFor:-1, prevPal:null,
+    quake:0, quakeWarn:0, quakeNext:CONFIG.quakeEvery, rubbleTimer:0,
   });
   seedProps();
   setBackdrop(0, true);
@@ -2055,7 +2159,8 @@ function showStart(){
                          speedScale:1, shield:0, scissors:0, rippleCd:0, flash:0,
                          phase:0, phaseLabel:0, phaseAt:0,
                          storm:0, stormWarn:0, stormNext:CONFIG.stormEvery, travel:0,
-                         props:[], propTimer:0, landmarkFor:-1,
+                         props:[], propTimer:0, landmarkFor:-1, prevPal:null,
+                         quake:0, quakeWarn:0, quakeNext:CONFIG.quakeEvery, rubbleTimer:0,
                          wind:0, sand:[], blocks:[], snakes:[], scarabs:[], debris:[] });
   seedProps();
   setBackdrop(0, true);
@@ -2183,6 +2288,7 @@ const SFX = {
   hit:    () => { tone(165, 0.5, "sawtooth", 0.26, 42); noiseBurst(0.32, 0.17, 320, 90); },
   ripple: () => { noiseBurst(0.5, 0.24, 2600, 180); tone(95, 0.55, "sine", 0.20, 40); },
   scene:  () => { tone(120, 1.5, "sine", 0.13, 195); tone(182, 1.2, "triangle", 0.05, 245); },
+  rumble: () => { tone(58, 2.2, "sine", 0.22, 34); noiseBurst(1.8, 0.14, 150, 60); },
 };
 
 const muteBtn = document.getElementById("muteBtn");
