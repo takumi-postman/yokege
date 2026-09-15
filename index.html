@@ -373,6 +373,7 @@ const state = {
   props:      [],   // いま見えている風景のもの（ヤシ・オアシス・岩・ピラミッド）
   propTimer:   0,   // 次に何かが生まれるまで
   landmarkFor:-1,   // どの場面ぶんの目印をもう置いたか
+  prevPal:  null,   // ひとつ前の場面の色。移り変わるあいだ混ぜるのに使う
   speedScale:  1,   // 緑による減速（0.45〜1）
   shield:      0,   // シールドの残り秒数
   scissors:    0,   // ハサミの残り本数。1本につき赤1個ぶん耐えられる
@@ -447,12 +448,13 @@ function update(dt, now){
   let p = 0;
   for(let i = 0; i < SCENES.length; i++) if(state.elapsed >= SCENES[i].at) p = i;
   if(p !== state.phase){
+    state.prevPal = SCENES[state.phase].pal || SCENES[p].pal;
     state.phase = p; state.phaseAt = state.elapsed; state.phaseLabel = 3.0;
     setBackdrop(p, false);
     SFX.scene();
   }
   if(state.phaseLabel > 0) state.phaseLabel -= dt;
-  if(bdFade < 1) bdFade = Math.min(1, bdFade + dt / 2.5);
+  if(bdFade < 1) bdFade = Math.min(1, bdFade + dt / 3.6);   // ゆっくり溶かす
 
   updateStorm(dt);
 
@@ -539,6 +541,12 @@ function update(dt, now){
 /* 予兆(2.5秒) → 嵐(18秒) → 平常(45秒) の繰り返し。
    時間帯（35秒周期）とわざと周期をずらしてあるので、毎回ちがう組み合わせになる。 */
 function updateStorm(dt){
+  if(SCENES[state.phase].indoor){          // 屋内に砂嵐は吹かない
+    state.storm = 0; state.stormWarn = 0;
+    state.stormNext = CONFIG.stormEvery;
+    updateSand(dt); stormNoise(0);
+    return;
+  }
   if(state.storm > 0){
     state.storm -= dt;
     if(state.storm <= 0){                       // 嵐が抜けた
@@ -879,7 +887,8 @@ function rippleDelete(){
    ========================================================== */
 function draw(){
   paintBackdrop();
-  drawProps(SCENES[state.phase].pal);
+  drawProps(livePal());
+  drawRuinProps();
   drawGround(SCENES[state.phase].ground);
   drawSandHaze();
 
@@ -1169,6 +1178,9 @@ const PHASES = [
     stars:0, scrim:0.18, orb:{ y:0.120, r:0.042, c:"#fffbe8", glow:"255,250,220", a:0.32 } },
 ];
 
+/* 遺跡の中の色。石柱の陰影を場面の色として持たせておく。 */
+const RUIN_PAL = { veg:["#4a3a24","#2e2316","#1a130c"], water:["#2a3d3a","#121d1c"], pyr:["#54401f","#2a1e12"] };
+
 /* 場面の並び。旅の順番そのもの。
    夕暮れに歩き出して、夜がいちばん深いところで遺跡に潜り、抜けると夜明けが待っている。 */
 const SCENES = [
@@ -1176,10 +1188,10 @@ const SCENES = [
   { at:  20, label:"日没",       ground:"sand", pal:PHASES[1], paint:g => paintDesert(g, PHASES[1]) },
   { at:  40, label:"宵",         ground:"sand", pal:PHASES[2], paint:g => paintDesert(g, PHASES[2]) },
   { at:  60, label:"夜",         ground:"sand", pal:PHASES[3], paint:g => paintDesert(g, PHASES[3]) },
-  { at:  80, label:"古代遺跡",   ground:"stone",                paint:paintRuins },
+  { at:  80, label:"古代遺跡",   ground:"stone", indoor:true, propKind:"ruins", pal:RUIN_PAL, paint:paintRuins },
   { at: 120, label:"薄明",       ground:"sand", pal:PHASES[4], paint:g => paintDesert(g, PHASES[4]) },
   { at: 140, label:"スフィンクス", ground:"sandFar",              paint:paintSphinx },
-  { at: 200, label:"王墓",       ground:"slab",                 paint:paintChamber },
+  { at: 200, label:"王墓",       ground:"slab",  indoor:true,   paint:paintChamber },
 ];
 
 /* 足元の地面。視点は変えずに、模様だけを手前へ流して
@@ -1197,7 +1209,43 @@ const GROUND = {
    ========================================================== */
 const HORIZON = 0.63;
 
+/* 2色を混ぜる。場面が移るあいだ、風景の色もいっしょに溶けていくために使う。 */
+function hex3(c){
+  return [parseInt(c.slice(1,3),16), parseInt(c.slice(3,5),16), parseInt(c.slice(5,7),16)];
+}
+function mix(a, b, t){
+  const A = hex3(a), B = hex3(b);
+  return "rgb(" + Math.round(A[0]+(B[0]-A[0])*t) + "," +
+                  Math.round(A[1]+(B[1]-A[1])*t) + "," +
+                  Math.round(A[2]+(B[2]-A[2])*t) + ")";
+}
+const ease = t => t * t * (3 - 2 * t);          // 出入りをなめらかに
+
+/* 奥行きによる色。3段階で切り替えると段差が見えるので、連続で混ぜる。 */
+function depthColor(veg, p){
+  return p < 0.5 ? mix(veg[0], veg[1], p * 2) : mix(veg[1], veg[2], (p - 0.5) * 2);
+}
+
+/* いま描くべき風景の色。場面が移っている最中は、前の場面の色と混ざる。 */
+function livePal(){
+  const cur = SCENES[state.phase].pal;
+  if(!cur) return null;
+  const prev = state.prevPal;
+  if(!prev || bdFade >= 1) return cur;
+  const t = ease(bdFade);
+  return {
+    veg:  [mix(prev.veg[0],  cur.veg[0],  t), mix(prev.veg[1], cur.veg[1], t), mix(prev.veg[2], cur.veg[2], t)],
+    water:[mix(prev.water[0],cur.water[0],t), mix(prev.water[1],cur.water[1],t)],
+    pyr:  [mix(prev.pyr[0],  cur.pyr[0],  t), mix(prev.pyr[1], cur.pyr[1], t)],
+  };
+}
+
 function spawnProp(){
+  if(SCENES[state.phase].propKind === "ruins"){
+    const q = Math.random();
+    return { z:0, kind: q < 0.18 ? "anubis" : "col",
+             torch: q > 0.62, spread: 0.85 + Math.random() * 0.35 };
+  }
   const r = Math.random();
   const o = {
     z: 0,                                    // 0=地平線  1=足元
@@ -1256,18 +1304,20 @@ function seedProps(){
   state.propTimer = CONFIG.propEvery;
 }
 
+const RUIN_KINDS = { col:1, anubis:1 };
+
 function drawProps(P){
   if(!P) return;
   const top = H * HORIZON, span = H - top;
   const list = state.props.slice().sort((a, b) => a.z - b.z);   // 奥から描く
 
   for(const o of list){
+    if(RUIN_KINDS[o.kind]) continue;              // 石柱と像は drawRuinProps が描く
     const p  = Math.max(0, Math.min(1.1, o.z));
     const y  = top + span * p * p;
     const sc = (0.08 + p * 1.9) * (o.big || 1);
     const x  = W / 2 + (o.x - 0.5) * W * (0.20 + p * 2.4);
-    const tier = p < 0.32 ? 0 : (p < 0.68 ? 1 : 2);   // 手前ほど暗いシルエット
-    const col  = P.veg[tier];
+    const col = depthColor(P.veg, p);                // 手前ほど暗く、段差なく
 
     if(o.kind === "oasis"){
       oasis(ctx, x, y, W * 0.16 * sc * o.w, H * 0.030 * sc, P.water);
@@ -1285,6 +1335,35 @@ function drawProps(P){
       ctx.closePath(); ctx.fill();
     } else if(o.kind === "pyramid"){
       pyramid(ctx, x, y, W * 0.11 * sc, H * 0.11 * sc, P.pyr[0], P.pyr[1]);
+    }
+  }
+}
+
+/* 遺跡の中を流れていくもの。石柱が両側を過ぎていくと、歩いている感じが一番出る。 */
+function drawRuinProps(){
+  const top = H * 0.58, span = H * 0.88 - top;
+  const list = state.props.slice().sort((a, b) => a.z - b.z);
+
+  for(const o of list){
+    if(!RUIN_KINDS[o.kind]) continue;             // 砂漠のものは drawProps が描く
+    const p  = Math.max(0, Math.min(1.1, o.z));
+    const y  = top + span * p * p;
+    const sc = 0.10 + p * 2.1;
+    const lit  = mix("#2a1f14", "#54401f", Math.max(0, 1 - p * 0.55));
+    const dark = mix("#1a130d", "#2a1e12", Math.max(0, 1 - p * 0.55));
+
+    for(const side of [-1, 1]){
+      const x = W / 2 + side * W * (0.06 + p * 0.52) * (o.spread || 1);
+      if(o.kind === "anubis"){
+        anubis(ctx, x, y, H * 0.26 * sc, -side);
+      } else {
+        const w = W * 0.030 * sc, h = H * 0.42 * sc;
+        ctx.fillStyle = dark; ctx.fillRect(x - w / 2, y - h, w, h);
+        ctx.fillStyle = lit;  ctx.fillRect(x - w / 2, y - h, w * 0.40, h);
+        ctx.fillRect(x - w * 0.64, y - h * 0.98, w * 1.28, h * 0.05);
+        ctx.fillRect(x - w * 0.64, y - h * 0.05, w * 1.28, h * 0.055);
+        if(o.torch) torch(ctx, x, y - h * 0.62);
+      }
     }
   }
 }
@@ -1338,7 +1417,7 @@ function setBackdrop(i, instant){
 function paintBackdrop(){
   if(bdPrev && bdFade < 1){
     ctx.drawImage(bdPrev, 0, 0, W, H);
-    ctx.globalAlpha = bdFade;
+    ctx.globalAlpha = ease(bdFade);
     ctx.drawImage(bdCur, 0, 0, W, H);
     ctx.globalAlpha = 1;
   } else {
@@ -1657,31 +1736,13 @@ function paintRuins(g){
     }
   }
 
-  // 石柱は端に寄せて、通路の脇をアヌビス像に譲る
-  column(g, W * 0.07, W * 0.075, "#42311f", "#241a10");
-  column(g, W * 0.93, W * 0.075, "#42311f", "#241a10");
-
-  // 床。像がこの上に立つので、先に敷いておく。
+  // 床。石柱も像も松明も、ここから先は毎フレーム流れてくるので焼き込まない。
   const floor = g.createLinearGradient(0, H * 0.86, 0, H);
   floor.addColorStop(0, "#20180f");
   floor.addColorStop(1, "#0d0906");
   g.fillStyle = floor; g.fillRect(0, H * 0.86, W, H * 0.14);
   g.strokeStyle = "rgba(90,66,38,.5)"; g.lineWidth = 1;
-  for(let i = 1; i < 5; i++){
-    const x = W * i / 5;
-    g.beginPath(); g.moveTo(x, H * 0.86); g.lineTo(x + (x - W / 2) * 0.28, H); g.stroke();
-  }
   g.beginPath(); g.moveTo(0, H * 0.86 + .5); g.lineTo(W, H * 0.86 + .5); g.stroke();
-
-  // 通路を挟んで向かい合うアヌビス像。門番なので、画面からはみ出るくらい大きく。
-  // 幅でも上限をかけているのは、狭い画面で2体がぶつかって通路を塞ぎきらないため。
-  const ah = Math.min(H * 0.60, W * 0.52);
-  anubis(g, W * 0.22, H * 0.87, ah,  1);
-  anubis(g, W * 0.78, H * 0.87, ah, -1);
-
-  // 松明は最後。灯りが柱にも像にも落ちる。
-  torch(g, W * 0.07, H * 0.34);
-  torch(g, W * 0.93, H * 0.34);
 }
 
 /* 石柱ひとつ。上下に台輪を付けるだけで神殿らしくなる。 */
@@ -1877,7 +1938,8 @@ function tuft(g, x, baseY, h, color){
    ========================================================== */
 function drawTitle(){
   paintBackdrop();
-  drawProps(SCENES[state.phase].pal);
+  drawProps(livePal());
+  drawRuinProps();
   drawGround(SCENES[state.phase].ground);
   drawPlayer(W / 2);
 
