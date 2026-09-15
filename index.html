@@ -1199,7 +1199,7 @@ const SCENES = [
 const GROUND = {
   sand:    { top:0.66, rows:12, kind:"ripple", color:"255,226,182", alpha:0.11 },
   sandFar: { top:0.87, rows:10, kind:"ripple", color:"255,222,176", alpha:0.16 },
-  stone:   { top:0.86, rows:10, kind:"seam",   color:"150,116,72",  alpha:0.50 },
+  stone:   { top:0.86, rows:6,  kind:"seam",   color:"150,116,72",  alpha:0.42 },
   slab:    { top:0.82, rows:11, kind:"seam",   color:"120,104,86",  alpha:0.45 },
 };
 
@@ -1244,7 +1244,7 @@ function spawnProp(){
   if(SCENES[state.phase].propKind === "ruins"){
     const q = Math.random();
     return { z:0, kind: q < 0.18 ? "anubis" : "col",
-             torch: q > 0.62, spread: 0.85 + Math.random() * 0.35 };
+             torch: q > 0.80, spread: 0.85 + Math.random() * 0.35 };
   }
   const r = Math.random();
   const o = {
@@ -1362,7 +1362,7 @@ function drawRuinProps(){
         ctx.fillStyle = lit;  ctx.fillRect(x - w / 2, y - h, w * 0.40, h);
         ctx.fillRect(x - w * 0.64, y - h * 0.98, w * 1.28, h * 0.05);
         ctx.fillRect(x - w * 0.64, y - h * 0.05, w * 1.28, h * 0.055);
-        if(o.torch) torch(ctx, x, y - h * 0.62);
+        if(o.torch) torch(ctx, x, y - h * 0.62, sc * 0.55);
       }
     }
   }
@@ -1835,26 +1835,28 @@ function anubis(g, cx, baseY, h, dir){
 }
 
 /* 松明。炎そのものより、周りに落ちる灯りのほうが効く。 */
-function torch(g, x, y){
-  const glow = g.createRadialGradient(x, y, 2, x, y, H * 0.30);
-  glow.addColorStop(0, "rgba(255,170,70,.34)");
+function torch(g, x, y, sc){
+  const k = Math.max(0.12, Math.min(1.6, sc === undefined ? 1 : sc));
+  const r = H * 0.22 * k;
+  const glow = g.createRadialGradient(x, y, 1, x, y, r);
+  glow.addColorStop(0, "rgba(255,170,70," + (0.30 * Math.min(1, k)).toFixed(3) + ")");
   glow.addColorStop(1, "rgba(255,170,70,0)");
   g.fillStyle = glow;
-  g.beginPath(); g.arc(x, y, H * 0.30, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
 
   g.fillStyle = "#3a2a18";                              // 受け皿
-  g.fillRect(x - 5, y + 6, 10, 9);
+  g.fillRect(x - 5 * k, y + 6 * k, 10 * k, 9 * k);
   g.fillStyle = "#ffb454";                              // 炎
   g.beginPath();
-  g.moveTo(x, y - 13);
-  g.quadraticCurveTo(x + 7, y + 1, x, y + 7);
-  g.quadraticCurveTo(x - 7, y + 1, x, y - 13);
+  g.moveTo(x, y - 13 * k);
+  g.quadraticCurveTo(x + 7 * k, y + k, x, y + 7 * k);
+  g.quadraticCurveTo(x - 7 * k, y + k, x, y - 13 * k);
   g.closePath(); g.fill();
   g.fillStyle = "#ffe6a8";
   g.beginPath();
-  g.moveTo(x, y - 7);
-  g.quadraticCurveTo(x + 3.4, y + 1, x, y + 5);
-  g.quadraticCurveTo(x - 3.4, y + 1, x, y - 7);
+  g.moveTo(x, y - 7 * k);
+  g.quadraticCurveTo(x + 3.4 * k, y + k, x, y + 5 * k);
+  g.quadraticCurveTo(x - 3.4 * k, y + k, x, y - 7 * k);
   g.closePath(); g.fill();
 }
 
