@@ -232,7 +232,7 @@
 const CONFIG = {
   lives:          3,    // 体力。赤に当たると1つ減る
   invulnTime:   1.3,    // 当たったあと、すり抜けられる秒数
-  clearAt:      155,    // ここまで生き延びたら踏破（2分35秒）
+  clearAt:      200,    // 保険。普通は最後の番人を倒した時点で踏破になる
   playerWidth:   40,    // 再生ヘッドの幅（小さくすると難しい）
   playerSpeed:   420,   // キーで動かすときの速さ（px/秒）
   blockMinWidth: 26,    // 落ちてくるクリップの最小幅
@@ -758,42 +758,71 @@ function warnMark(x, y, r){
    構え → 一撃 → 間合い、を繰り返す。当たる場所は必ず先に赤で見せる。
    技は複数持たせて、同じものが3回続かないようにしてある。 */
 const BOSS_DEF = {
-  anubis: { at:  68, rise:2.2, attacks:[4, 6], moves:["slam","sweep","pillars"] },
-  sphinx: { at: 112, rise:2.4, attacks:[3, 5], moves:["laser","bomb"] },
+  anubis:  { at:  68, rise:2.2, attacks:[4, 6], moves:["slam","sweep","pillars"] },
+  sphinx:  { at: 110, rise:2.4, attacks:[3, 4], moves:["laser","bomb"] },
+  // 最後の一体。間合いを詰めてあるので休ませてくれない。倒すと旅が終わる。
+  pharaoh: { at: 135, rise:3.2, attacks:[4, 5], gap:1.10, final:true,
+             moves:["judgement","souls","closing"] },
 };
+
+/* 構えの長さ。裁きだけは「安全な場所へ入る」技なので、見てから動く余裕を足す。 */
+function tellTime(B){ return B.kind === "judgement" ? 1.60 : CONFIG.bossTell; }
 
 function updateBoss(dt){
   const want = SCENES[state.phase].boss;
-  if(!want){ state.boss = null; return; }
-  const def = BOSS_DEF[want];
 
-  if(!state.boss && state.elapsed >= def.at){
-    const [lo, hi] = def.attacks;                    // 何回で崩れるかも毎回変える
+  // 場面が変わっても、立っているものはその場で消さない。崩れて退場させる。
+  // 消すと「居たものが一瞬で無くなる」ように見えて、バグと区別がつかない。
+  if(state.boss && state.boss.who !== want && state.boss.mode !== "fall"){
+    state.boss.mode = "fall"; state.boss.t = 0;
+  }
+
+  if(!state.boss && want && state.elapsed >= BOSS_DEF[want].at){
+    const d = BOSS_DEF[want];
+    const [lo, hi] = d.attacks;                      // 何回で崩れるかも毎回変える
     state.boss = { who:want, t:0, mode:"rise", left:lo + Math.floor(Math.random() * (hi - lo + 1)),
-                   combo:0, kind:def.moves[0], last:null, run:0, x:W/2, side:1, spots:[] };
-    SFX.rumble();
+                   combo:0, kind:d.moves[0], last:null, run:0, x:W/2, side:1, spots:[],
+                   safe:W/2, beaten:false, seed:Math.random() * 1000 };
+    if(d.final) SFX.lid(); else SFX.rumble();
     return;
   }
   const B = state.boss;
   if(!B) return;
+  const def = BOSS_DEF[B.who];
+  const gap = def.gap || CONFIG.bossGap;
   B.t += dt;
 
   if(B.mode === "rise"){
-    if(B.t >= def.rise){ B.mode = "tell"; B.t = 0; aimBoss(B, def); }
+    if(B.t >= def.rise){ B.mode = "tell"; B.t = 0; aimBoss(B, def); if(def.final) SFX.wail(); }
   } else if(B.mode === "tell"){
-    if(B.t >= CONFIG.bossTell){ B.mode = "strike"; B.t = 0; SFX.slam(); }
+    if(B.t >= tellTime(B)){
+      B.mode = "strike"; B.t = 0;
+      if(B.kind === "judgement") SFX.judge();
+      else if(B.kind === "souls") SFX.soul();
+      else SFX.slam();
+    }
   } else if(B.mode === "strike"){
     bossHits(B);
     if(!state.running) return;
     if(B.t >= CONFIG.bossStrike){
       B.t = 0;
       if(B.combo > 0){ B.combo--; B.mode = "chain"; }   // 続けてもう一撃
-      else { B.left--; B.mode = B.left <= 0 ? "fall" : "gap"; if(B.mode === "fall") SFX.rumble(); }
+      else {
+        B.left--;
+        B.mode = B.left <= 0 ? "fall" : "gap";
+        if(B.mode === "fall"){ B.beaten = true; if(def.final) SFX.crumble(); else SFX.rumble(); }
+      }
     }
   } else if(B.mode === "chain"){
     if(B.t >= CONFIG.bossCombo){ B.mode = "tell"; B.t = 0; aimBoss(B, def, true); }
   } else if(B.mode === "gap"){
-    if(B.t >= CONFIG.bossGap){ B.mode = "tell"; B.t = 0; aimBoss(B, def); }
+    if(B.t >= gap){ B.mode = "tell"; B.t = 0; aimBoss(B, def); }
+  } else if(B.mode === "fall"){
+    // 崩れ終わってから片付ける。最後の一体なら、そこが旅の終わり。
+    if(B.t >= (def.final ? 3.0 : 2.4)){
+      state.boss = null;
+      if(def.final && B.beaten && state.running) clearGame();
+    }
   }
 }
 
@@ -812,6 +841,20 @@ function aimBoss(B, def, chained){
   if(kind === "laser")   B.spots = [state.playerX, W * (0.15 + Math.random() * 0.7)];
   if(kind === "bomb")    B.spots = [0.2, 0.5, 0.8].map(f => W * (f + (Math.random() * 0.14 - 0.07)));
 
+  // 裁き：画面のほとんどが焼ける。金色に照らされた一本だけが安全。
+  if(kind === "judgement") B.safe = W * (0.13 + Math.random() * 0.74);
+  // 亡者：床から手が出る。4本のうち2〜3本。
+  if(kind === "souls"){
+    const lanes = [0.13, 0.35, 0.57, 0.80].map(f => W * (f + (Math.random() * 0.10 - 0.05)));
+    for(let i = lanes.length - 1; i > 0; i--){        // 並びを崩してから間引く
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = lanes[i]; lanes[i] = lanes[j]; lanes[j] = t;
+    }
+    B.spots = lanes.slice(0, 2 + Math.floor(Math.random() * 2));
+  }
+  // 圧殺：両側の壁が寄ってくる。真ん中が安全だが、その真ん中がずれている。
+  if(kind === "closing") B.safe = W * (0.30 + Math.random() * 0.40);
+
   // ときどき連続で来る。1回避けたら終わり、と読ませないため。
   if(!chained && B.combo <= 0 && Math.random() < 0.35) B.combo = 1;
 }
@@ -824,6 +867,16 @@ function bossZones(B){
   if(B.kind === "pillars") return [{ x:0, w:W * 0.30 }, { x:W * 0.70, w:W * 0.30 }];
   if(B.kind === "laser")   return B.spots.map(x => ({ x: x - W * 0.045, w: W * 0.09 }));
   if(B.kind === "bomb")    return B.spots.map(x => ({ x: x - W * 0.085, w: W * 0.17 }));
+  if(B.kind === "souls")   return B.spots.map(x => ({ x: x - W * 0.075, w: W * 0.15 }));
+  // 裁きと圧殺は「安全な帯」を残して、それ以外が全部当たる。
+  if(B.kind === "judgement" || B.kind === "closing"){
+    const half = (B.kind === "judgement" ? W * 0.085 : W * 0.115);
+    const a = Math.max(0, B.safe - half), b = Math.min(W, B.safe + half);
+    const out = [];
+    if(a > 0)  out.push({ x:0, w:a });
+    if(b < W)  out.push({ x:b, w:W - b });
+    return out;
+  }
   return [];
 }
 
@@ -851,6 +904,7 @@ function drawBoss(){
   const B = state.boss;
   if(!B) return;
   const def = BOSS_DEF[B.who];
+  if(B.who === "pharaoh"){ drawPharaohBoss(B, def); return; }   // 棺ごと動くので別扱い
   const k = bossScale(B, def);
   if(k < 0.02) return;
   ctx.save();
@@ -867,7 +921,7 @@ function drawAnubisBoss(B, h){
   const S = "#3f3020", L = "#6d5231", D = "#1a120b", GOLD = "#dcb75f";
 
   let ang = -0.35;
-  if(B.mode === "tell")   ang = -0.35 - 0.9 * (B.t / CONFIG.bossTell);
+  if(B.mode === "tell")   ang = -0.35 - 0.9 * (B.t / tellTime(B));
   if(B.mode === "strike") ang = 0.95;
   const sx = cx + 0.30 * h, sy = baseY - 0.62 * h;
   ctx.save();
@@ -919,7 +973,7 @@ function drawSphinxBoss(B, h){
 
   const charging = B.mode === "tell" || B.mode === "strike";
   if(!charging) return;
-  const heat = B.mode === "strike" ? 1 : B.t / CONFIG.bossTell;
+  const heat = B.mode === "strike" ? 1 : B.t / tellTime(B);
 
   if(B.kind === "laser"){                              // 両目が青白く灯る
     for(const sx of [-1, 1]){
@@ -940,6 +994,490 @@ function drawSphinxBoss(B, h){
   }
 }
 
+/* --- 王墓 ------------------------------------------------ */
+/* ここは貼り付けた背景ではなく、毎フレーム描く。
+   刻みが脈を打ち、光の筋が揺れ、床の裂け目が燃える。石棺は開く。 */
+
+function tombOpen(){                       // 蓋がどれだけ開いたか（0→1）
+  const B = state.boss;
+  if(!B || B.who !== "pharaoh") return 0;
+  if(B.mode === "rise") return Math.min(1, B.t / BOSS_DEF.pharaoh.rise);
+  return 1;
+}
+
+/* 部屋がどれだけ目覚めているか。近づくと壁が薄く光り出し、
+   「何かが起きる部屋だ」と、開く前に分かるようにしてある。 */
+function tombHeat(){
+  const B = state.boss;
+  if(B && B.who === "pharaoh"){
+    if(B.mode === "rise") return 0.45 + 0.55 * Math.min(1, B.t / BOSS_DEF.pharaoh.rise);
+    if(B.mode === "fall") return Math.max(0, 1 - B.t / 3.0);
+    return 1;
+  }
+  const lead = BOSS_DEF.pharaoh.at - 4;
+  return Math.max(0, Math.min(0.45, (state.elapsed - lead) / 4 * 0.45));
+}
+
+function drawTomb(){
+  if(SCENES[state.phase].domain !== "tomb") return;
+  const t = state.elapsed, heat = tombHeat(), open = tombOpen();
+  const B = state.boss && state.boss.who === "pharaoh" ? state.boss : null;
+
+  /* 壁の刻み。左右の壁に彫られた列が、下から上へ順に灯る。 */
+  const rnd = seeded(60607);
+  for(let c = 0; c < 6; c++){
+    const gx = c < 3 ? W * (0.030 + c * 0.052) : W * (0.812 + (c - 3) * 0.052);
+    for(let k = 0; k < 10; k++){
+      const gy = H * (0.135 + k * 0.058);
+      const wave = Math.sin(t * 2.6 - k * 0.55 + c * 1.3);
+      const a = heat * (0.16 + 0.44 * (0.5 + 0.5 * wave));
+      if(a < 0.03) continue;
+      ctx.globalAlpha = Math.min(1, a);
+      ctx.fillStyle = "#ffcb63";
+      const s = rnd();
+      if(s < 0.34){                                        // 横棒
+        ctx.fillRect(gx, gy, W * 0.030, H * 0.011);
+      } else if(s < 0.67){                                 // 縦棒と点
+        ctx.fillRect(gx + W * 0.010, gy - H * 0.004, W * 0.009, H * 0.024);
+        ctx.beginPath(); ctx.arc(gx + W * 0.025, gy + H * 0.016, W * 0.006, 0, Math.PI * 2); ctx.fill();
+      } else {                                             // アンク
+        ctx.strokeStyle = "#ffcb63"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(gx + W * 0.015, gy, W * 0.008, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(gx + W * 0.015, gy + H * 0.004); ctx.lineTo(gx + W * 0.015, gy + H * 0.026);
+        ctx.moveTo(gx + W * 0.005, gy + H * 0.012); ctx.lineTo(gx + W * 0.025, gy + H * 0.012);
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  /* 高窓から差す光が、埃を巻き上げながら揺れる。 */
+  ctx.save();
+  const sway = Math.sin(t * 0.7) * W * 0.012;
+  const beam = ctx.createLinearGradient(W * 0.20, H * 0.12, W * 0.62, H * 0.90);
+  beam.addColorStop(0, "rgba(255,236,190," + (0.10 + heat * 0.12).toFixed(3) + ")");
+  beam.addColorStop(1, "rgba(255,236,190,0)");
+  ctx.fillStyle = beam;
+  ctx.beginPath();
+  ctx.moveTo(W * 0.16, H * 0.13); ctx.lineTo(W * 0.23, H * 0.13);
+  ctx.lineTo(W * 0.72 + sway, H * 0.92); ctx.lineTo(W * 0.40 + sway, H * 0.92);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  for(let i = 0; i < 26; i++){                    // 舞う埃。上がったり下がったりする
+    const ph = (t * 0.16 + i * 0.137) % 1;
+    const x  = W * (0.19 + ((i * 0.0731) % 1) * 0.44) + Math.sin(t * 1.1 + i) * 9;
+    const y  = H * (0.94 - ph * 0.80);
+    ctx.globalAlpha = (0.10 + heat * 0.26) * Math.sin(ph * Math.PI);
+    ctx.fillStyle = "#ffeec4";
+    ctx.beginPath(); ctx.arc(x, y, 1.3, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  /* 床の裂け目。王が起き上がるほど強く燃える。 */
+  if(heat > 0.05){
+    const cx = W / 2;
+    for(let i = 0; i < 7; i++){
+      const dir = i % 2 ? 1 : -1, sp = (i + 1) / 7;
+      const ex = cx + dir * W * 0.13 * (i + 1) * (0.7 + 0.3 * Math.sin(t + i));
+      ctx.globalAlpha = heat * (0.35 + 0.35 * Math.sin(t * 4.1 + i * 1.9));
+      ctx.strokeStyle = "#ff9b2e"; ctx.lineWidth = 3.4 - sp * 1.8;
+      ctx.beginPath();
+      ctx.moveTo(cx, H * 0.905);
+      ctx.quadraticCurveTo((cx + ex) / 2, H * (0.90 + 0.035 * sp), ex, H * (0.895 + 0.075 * sp));
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* 石棺。閉じている・割れる・開ききる、を一本の値で描き分ける。 */
+  const cw = Math.min(W * 0.30, H * 0.34), ch = H * 0.46;
+  sarcophagus(ctx, W / 2, H * 0.905, cw, ch, open, B);
+}
+
+/* --- 起き上がる王 ---------------------------------------- */
+/* 蓋が割れてから立ち上がる。構えで笏を掲げ、一撃で振り下ろす。
+   倒れるときは仮面が割れて、中の光が抜けていく。 */
+function drawPharaohBoss(B, def){
+  const cx = W / 2, baseY = H * 0.905;
+  let up = 1, fade = 1, ruin = 0;
+  if(B.mode === "rise") up = Math.min(1, Math.max(0, (B.t / def.rise - 0.36) / 0.64));
+  if(B.mode === "fall"){
+    ruin = Math.min(1, B.t / 3.0);
+    up   = 1 - ruin * 0.42;
+    fade = Math.max(0, 1 - Math.max(0, ruin - 0.45) / 0.55);
+  }
+  if(up <= 0.02 || fade <= 0.02) return;
+
+  const h    = H * 0.70;
+  const bob  = Math.sin(state.elapsed * 1.6) * h * 0.012;
+  const sink = (1 - up) * h * 0.62;
+  const topY = baseY - h * up + bob + sink * 0;
+
+  const tell = B.mode === "tell" ? B.t / tellTime(B) : (B.mode === "strike" ? 1 : 0);
+  const eye  = B.kind === "souls" ? "#8dffb4" : (B.kind === "closing" ? "#dfe9ff" : "#ffd873");
+
+  ctx.save();
+  ctx.globalAlpha = fade;
+  ctx.beginPath(); ctx.rect(0, 0, W, baseY - h * 0.055); ctx.clip();   // 棺の縁から上だけ
+  ctx.translate(0, sink);
+
+  /* 背後の光。技を溜めるほど強くなる。 */
+  const ay  = topY + h * 0.40;
+  const aur = 0.26 + 0.38 * tell + 0.10 * Math.sin(state.elapsed * 3.3);
+  const ag  = ctx.createRadialGradient(cx, ay, 0, cx, ay, h * 0.92);
+  ag.addColorStop(0, "rgba(255,206,110," + (aur * (1 - ruin)).toFixed(3) + ")");
+  ag.addColorStop(1, "rgba(255,150,40,0)");
+  ctx.fillStyle = ag;
+  ctx.beginPath(); ctx.arc(cx, ay, h * 0.92, 0, Math.PI * 2); ctx.fill();
+
+  // 光条。構えのあいだだけ回る。何かが溜まっていると分かるように。
+  if(tell > 0.02 && ruin < 0.5){
+    ctx.save();
+    ctx.translate(cx, ay); ctx.rotate(state.elapsed * 0.45);
+    ctx.globalAlpha = fade * 0.30 * tell;
+    ctx.fillStyle = "#ffd98a";
+    for(let i = 0; i < 12; i++){
+      ctx.rotate(Math.PI * 2 / 12);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(h * 0.95, -h * 0.035);
+      ctx.lineTo(h * 0.95,  h * 0.035);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalAlpha = fade;
+  }
+
+  // 王のまわりを回る金の刻み。動くものを増やして、止まって見えないようにする。
+  if(ruin < 0.6){
+    for(let i = 0; i < 9; i++){
+      const a = state.elapsed * (0.6 + i * 0.08) + i * 0.7;
+      const rr = h * (0.42 + 0.10 * Math.sin(state.elapsed * 1.3 + i));
+      ctx.globalAlpha = fade * (0.30 + 0.30 * Math.sin(state.elapsed * 2.4 + i)) * (1 - ruin);
+      ctx.fillStyle = "#ffd98a";
+      ctx.fillRect(cx + Math.cos(a) * rr * 1.25 - 3, ay + Math.sin(a) * rr * 0.55 - 5, 6, 10);
+    }
+    ctx.globalAlpha = fade;
+  }
+
+  const LIN = "#d9c9a6", LIN2 = "#a8926d", D = "#1b1309", GOLD = "#e5bb62", GOLD2 = "#f7e6b4", BLUE = "#2d5f86";
+
+  /* ほどけかけた包帯が数本、風もないのに揺れている。 */
+  for(let i = 0; i < 5; i++){
+    const sx = cx + (i - 2) * h * 0.075, sy = topY + h * (0.40 + (i % 3) * 0.10);
+    const sw = Math.sin(state.elapsed * (1.8 + i * 0.4) + i) * h * 0.055;
+    ctx.globalAlpha = fade * (0.55 - ruin * 0.4);
+    ctx.strokeStyle = LIN2; ctx.lineWidth = h * 0.014; ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.quadraticCurveTo(sx + sw, sy + h * 0.10, sx + sw * 1.7, sy + h * 0.20);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = fade;
+
+  /* 胴。包帯を巻いた柱。 */
+  ctx.fillStyle = LIN;
+  ctx.beginPath();
+  ctx.moveTo(cx - h * 0.145, baseY);
+  ctx.lineTo(cx + h * 0.145, baseY);
+  ctx.lineTo(cx + h * 0.175, topY + h * 0.30);
+  ctx.lineTo(cx - h * 0.175, topY + h * 0.30);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = "rgba(60,44,26,.34)"; ctx.lineWidth = Math.max(1, h * 0.008);
+  for(let k = 0; k < 11; k++){                     // 巻きの段
+    const y = topY + h * (0.33 + k * 0.058);
+    ctx.beginPath();
+    ctx.moveTo(cx - h * 0.172, y);
+    ctx.lineTo(cx + h * 0.172, y + h * 0.012 * (k % 2 ? 1 : -1));
+    ctx.stroke();
+  }
+
+  /* 胸の襟。金と青の段。 */
+  for(let k = 0; k < 4; k++){
+    ctx.fillStyle = k % 2 ? BLUE : GOLD;
+    ctx.beginPath();
+    ctx.ellipse(cx, topY + h * 0.245, h * (0.215 - k * 0.028), h * (0.115 - k * 0.018), 0, 0, Math.PI);
+    ctx.fill();
+  }
+
+  /* 腕。普段は胸の前で交差させ、構えで左右へ掲げ、一撃で振り下ろす。
+     持ち物は腕の延長に描くので、どこを向いても手から生えて見える。 */
+  let arm = 1.25;                                     // 胸の前で交差
+  if(B.mode === "tell")   arm = 1.25 + 1.30 * tell;   // 掲げていく
+  if(B.mode === "strike") arm = 0.30;                 // 振り下ろす
+  for(const side of [-1, 1]){
+    ctx.save();
+    ctx.translate(cx + side * h * 0.150, topY + h * 0.250);
+    ctx.rotate(side * arm);
+    ctx.fillStyle = LIN;                              // 腕
+    ctx.fillRect(-h * 0.038, -h * 0.02, h * 0.076, h * 0.26);
+    ctx.fillStyle = "#c2ab84";                        // 手
+    ctx.beginPath(); ctx.arc(0, h * 0.245, h * 0.042, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = GOLD; ctx.lineCap = "round";
+    if(side < 0){                                     // 曲がった杖（ヘカ）
+      ctx.lineWidth = h * 0.036;
+      ctx.beginPath(); ctx.moveTo(0, h * 0.235); ctx.lineTo(0, h * 0.430); ctx.stroke();
+      ctx.beginPath(); ctx.arc(h * 0.046, h * 0.430, h * 0.046, Math.PI, Math.PI * 2.15); ctx.stroke();
+    } else {                                          // 殻竿（ネケク）
+      ctx.lineWidth = h * 0.036;
+      ctx.beginPath(); ctx.moveTo(0, h * 0.235); ctx.lineTo(0, h * 0.395); ctx.stroke();
+      ctx.lineWidth = h * 0.019;
+      for(let s = -1; s <= 1; s++){
+        ctx.beginPath();
+        ctx.moveTo(0, h * 0.400);
+        ctx.lineTo(s * h * 0.040, h * 0.478);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  /* 頭。ネメス頭巾に金の仮面。額に蛇。 */
+  const hy = topY + h * 0.115;
+  const nemes = () => {
+    ctx.beginPath();
+    ctx.moveTo(cx - h * 0.205, topY + h * 0.245);
+    ctx.quadraticCurveTo(cx - h * 0.190, topY - h * 0.015, cx, topY - h * 0.015);
+    ctx.quadraticCurveTo(cx + h * 0.190, topY - h * 0.015, cx + h * 0.205, topY + h * 0.245);
+    ctx.lineTo(cx + h * 0.130, topY + h * 0.245);
+    ctx.quadraticCurveTo(cx + h * 0.120, topY + h * 0.055, cx, topY + h * 0.050);
+    ctx.quadraticCurveTo(cx - h * 0.120, topY + h * 0.055, cx - h * 0.130, topY + h * 0.245);
+    ctx.closePath();
+  };
+  ctx.fillStyle = GOLD; nemes(); ctx.fill();
+  ctx.save(); nemes(); ctx.clip();                    // 縞は頭巾の内側だけ
+  ctx.fillStyle = BLUE;
+  for(let k = 0; k < 5; k++){
+    ctx.fillRect(cx - h * 0.205 + k * h * 0.019, topY + h * 0.060, h * 0.009, h * 0.200);
+    ctx.fillRect(cx + h * 0.130 + k * h * 0.019, topY + h * 0.060, h * 0.009, h * 0.200);
+  }
+  ctx.restore();
+  ctx.fillStyle = GOLD2;                              // 顔
+  ctx.beginPath();
+  ctx.ellipse(cx, hy, h * 0.105, h * 0.125, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = D;                                  // 顎ひげ
+  ctx.fillRect(cx - h * 0.022, topY + h * 0.225, h * 0.044, h * 0.085);
+  const uy = topY + h * 0.042;                        // 額の蛇（ウラエウス）
+  ctx.fillStyle = "#c9a13f";
+  ctx.beginPath();
+  ctx.moveTo(cx - h * 0.032, uy + h * 0.034);
+  ctx.quadraticCurveTo(cx - h * 0.046, uy - h * 0.014, cx, uy - h * 0.020);
+  ctx.quadraticCurveTo(cx + h * 0.046, uy - h * 0.014, cx + h * 0.032, uy + h * 0.034);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#7d2b23";
+  ctx.beginPath(); ctx.ellipse(cx, uy - h * 0.002, h * 0.014, h * 0.012, 0, 0, Math.PI * 2); ctx.fill();
+
+  /* 目。技によって色が変わり、構えのあいだに燃え上がる。 */
+  const glow = 0.45 + 0.55 * tell;
+  for(const s of [-1, 1]){
+    const ex = cx + s * h * 0.045, ey = hy - h * 0.012;
+    const g = ctx.createRadialGradient(ex, ey, 0, ex, ey, h * 0.075 * (0.7 + glow * 0.6));
+    g.addColorStop(0, eye);
+    g.addColorStop(1, "rgba(255,200,90,0)");
+    ctx.globalAlpha = fade * glow;
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(ex, ey, h * 0.075 * (0.7 + glow * 0.6), 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = D;
+    ctx.beginPath(); ctx.ellipse(ex, ey, h * 0.024, h * 0.013, 0, 0, Math.PI * 2); ctx.fill();
+  }
+
+  /* 崩れるとき。仮面に亀裂が走り、中の光が抜けて灰になる。 */
+  if(ruin > 0){
+    const rr = seeded(4242);
+
+    // 割れ目。中に閉じ込めていた光が、そこから抜けていく。
+    ctx.globalAlpha = fade * Math.min(1, ruin * 2.4);
+    ctx.strokeStyle = "#fff2c8"; ctx.lineWidth = Math.max(1.8, h * 0.014);
+    ctx.lineCap = "round";
+    ctx.shadowColor = "#ffb23c"; ctx.shadowBlur = h * 0.06;
+    for(let i = 0; i < 11; i++){
+      let x0 = cx + (rr() - 0.5) * h * 0.36, y0 = topY + rr() * h * 0.62;
+      ctx.beginPath(); ctx.moveTo(x0, y0);
+      for(let s = 0; s < 3; s++){                   // 枝分かれしながら走る
+        x0 += (rr() - 0.5) * h * 0.11; y0 += h * (0.04 + rr() * 0.07);
+        ctx.lineTo(x0, y0);
+      }
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+
+    // 剥がれ落ちる欠片。回りながら落ちて、床の手前で消える。
+    for(let i = 0; i < 16; i++){
+      const ph = Math.min(1, Math.max(0, ruin * 1.5 - i * 0.035));
+      if(ph <= 0) continue;
+      const px = cx + (rr() - 0.5) * h * 0.40 + (rr() - 0.5) * h * 0.30 * ph;
+      const py = topY + rr() * h * 0.60 + ph * ph * h * 0.75;
+      const sz = h * (0.018 + rr() * 0.030);
+      ctx.globalAlpha = fade * (1 - ph) * 0.95;
+      ctx.save();
+      ctx.translate(px, py); ctx.rotate(ph * (3 + i));
+      ctx.fillStyle = i % 3 ? "#cdb88e" : "#e3c274";
+      ctx.fillRect(-sz / 2, -sz / 2, sz, sz * 0.8);
+      ctx.restore();
+    }
+
+    // 立ちのぼる灰
+    for(let i = 0; i < 46; i++){
+      const ph = (ruin * 1.5 + i * 0.081) % 1;
+      ctx.globalAlpha = fade * (1 - ph) * 0.75;
+      ctx.fillStyle = i % 4 ? "#c9b48c" : "#ffd27a";
+      ctx.beginPath();
+      ctx.arc(cx + (rr() - 0.5) * h * 0.52 + Math.sin(ph * 5 + i) * h * 0.06,
+              topY + h * 0.55 - ph * h * 0.85, 1.2 + rr() * 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 最後にひと呼吸、白く抜ける
+    if(ruin > 0.55){
+      const f = Math.sin(Math.min(1, (ruin - 0.55) / 0.45) * Math.PI);
+      ctx.globalAlpha = fade * f * 0.55;
+      const fg = ctx.createRadialGradient(cx, topY + h * 0.35, 0, cx, topY + h * 0.35, h * 0.9);
+      fg.addColorStop(0, "#fff6da"); fg.addColorStop(1, "rgba(255,180,60,0)");
+      ctx.fillStyle = fg;
+      ctx.beginPath(); ctx.arc(cx, topY + h * 0.35, h * 0.9, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+/* 最後の一体の技。構えと一撃をまとめてここで描く。
+   裁きと圧殺は「助かる場所を示す」技なので、危ない側を赤く塗ると意味が逆になる。
+   危ないほうは黒く沈め、助かる一本を金色に立てて、そこへ入れと分かるようにした。 */
+function drawPharaohZone(B, zones){
+  const strike = B.mode === "strike";
+  const q = strike ? Math.min(1, B.t / CONFIG.bossStrike) : Math.min(1, B.t / tellTime(B));
+
+  /* 裁き ─ 画面のほとんどが焼ける。金色の一本だけが助かる。 */
+  if(B.kind === "judgement"){
+    const half = W * 0.085, a = B.safe - half, b = B.safe + half;
+    if(!strike){
+      ctx.globalAlpha = 0.34 + 0.44 * q;                  // 危ない側を沈める
+      ctx.fillStyle = "#4a0b06";
+      for(const z of zones) ctx.fillRect(z.x, 0, z.w, H);
+      const g = ctx.createLinearGradient(a, 0, b, 0);     // 助かる一本
+      g.addColorStop(0,   "rgba(255,214,110,0)");
+      g.addColorStop(0.5, "rgba(255,238,182," + (0.34 + 0.44 * q).toFixed(3) + ")");
+      g.addColorStop(1,   "rgba(255,214,110,0)");
+      ctx.globalAlpha = 1; ctx.fillStyle = g;
+      ctx.fillRect(a, 0, b - a, H);
+      ctx.globalAlpha = 0.55 + 0.45 * Math.abs(Math.sin(q * Math.PI * 6));
+      ctx.strokeStyle = "#ffe9a8"; ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(a, 0); ctx.lineTo(a, H); ctx.moveTo(b, 0); ctx.lineTo(b, H);
+      ctx.stroke();
+      ctx.globalAlpha = 0.55;                             // 光が降りて、入る場所を指す
+      ctx.fillStyle = "#fff3cf";
+      for(let i = 0; i < 6; i++) ctx.fillRect(a + 5, ((q * 1.9 + i / 6) % 1) * H, b - a - 10, 3);
+      return;
+    }
+    ctx.globalAlpha = 0.95 * (1 - q * 0.55);
+    for(const z of zones){
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0,   "#fff6dd");
+      g.addColorStop(0.45, "#ffae3d");
+      g.addColorStop(1,   "rgba(255,86,26,.88)");
+      ctx.fillStyle = g; ctx.fillRect(z.x, 0, z.w, H);
+    }
+    ctx.globalAlpha = 0.9 * (1 - q);
+    ctx.fillStyle = "#fffaf0";
+    ctx.fillRect(a - 3, 0, 6, H); ctx.fillRect(b - 3, 0, 6, H);
+    return;
+  }
+
+  /* 圧殺 ─ 両側の壁が寄ってくる。寄ってくるのが見えるので、逃げ場が分かる。 */
+  if(B.kind === "closing"){
+    for(const z of zones){
+      const left = z.x <= 1;
+      const ext  = strike ? z.w : z.w * (0.12 + 0.88 * q * q);
+      const x    = left ? 0 : z.x + (z.w - ext);
+      const g = ctx.createLinearGradient(left ? 0 : W, 0, left ? ext : W - ext, 0);
+      g.addColorStop(0,   "#5b4a38");
+      g.addColorStop(0.7, "#3a2e22");
+      g.addColorStop(1,   "#241c14");
+      ctx.globalAlpha = strike ? 1 : 0.96;
+      ctx.fillStyle = g; ctx.fillRect(x, 0, ext, H);
+      for(let r = 0; r < 7; r++){                         // 積み石の目地
+        ctx.globalAlpha = 0.35; ctx.strokeStyle = "#1b150f"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, H * (r + 0.5) / 7); ctx.lineTo(x + ext, H * (r + 0.5) / 7); ctx.stroke();
+      }
+      ctx.globalAlpha = strike ? 0.9 : 0.55 + 0.45 * Math.abs(Math.sin(q * Math.PI * 6));
+      ctx.strokeStyle = "#ff6a5c"; ctx.lineWidth = 4;     // 迫ってくる面は赤く縁取る
+      ctx.beginPath();
+      const edge = left ? ext : x;
+      ctx.moveTo(edge, 0); ctx.lineTo(edge, H); ctx.stroke();
+      if(strike){                                         // ぶつかった粉
+        ctx.globalAlpha = 0.8 * (1 - q);
+        ctx.fillStyle = "#c9b48c";
+        for(let i = 0; i < 16; i++){
+          const y = ((i * 0.137 + q) % 1) * H;
+          ctx.beginPath();
+          ctx.arc(edge + (left ? 1 : -1) * (6 + q * 44) * ((i % 5) / 4 + 0.2), y, 1 + (i % 3), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    return;
+  }
+
+  /* 亡者 ─ 床から手が出る。当たる場所なので、赤の予告はそのまま残す。 */
+  if(!strike){
+    for(const z of zones){
+      ctx.globalAlpha = 0.20 + 0.28 * Math.abs(Math.sin(q * Math.PI * 5));
+      ctx.fillStyle = "#ff4b3e"; ctx.fillRect(z.x, 0, z.w, H);
+      ctx.globalAlpha = 0.95;
+      ctx.strokeStyle = "#ff8076"; ctx.lineWidth = 3;
+      ctx.strokeRect(z.x + 1.5, 1.5, z.w - 3, H - 3);
+      const g = ctx.createLinearGradient(0, H, 0, H * 0.55);   // 床の裂け目が緑に燃える
+      g.addColorStop(0, "rgba(140,255,180," + (0.55 * q).toFixed(3) + ")");
+      g.addColorStop(1, "rgba(140,255,180,0)");
+      ctx.globalAlpha = 1; ctx.fillStyle = g;
+      ctx.fillRect(z.x, H * 0.55, z.w, H * 0.45);
+    }
+    return;
+  }
+  for(const z of zones){
+    const cx = z.x + z.w / 2, reach = H * (0.30 + 0.62 * Math.min(1, q * 1.5));
+    ctx.globalAlpha = 0.30 * (1 - q * 0.5);
+    ctx.fillStyle = "#7dffae"; ctx.fillRect(z.x, H - reach, z.w, reach);
+    ctx.globalAlpha = 0.95 * (1 - q * 0.35);
+    for(let a = -1; a <= 1; a++){                          // 突き上がる腕
+      const ax = cx + a * z.w * 0.26, len = reach * (a === 0 ? 1 : 0.74);
+      const tipX = ax + a * z.w * 0.07, tipY = H - len;
+      ctx.strokeStyle = "#dff6cf"; ctx.lineWidth = z.w * 0.15; ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(ax, H);
+      ctx.quadraticCurveTo(ax + a * z.w * 0.11, H - len * 0.55, tipX, tipY + z.w * 0.10);
+      ctx.stroke();
+      ctx.fillStyle = "#eefde4";                           // 手のひら
+      ctx.beginPath();
+      ctx.ellipse(tipX, tipY + z.w * 0.06, z.w * 0.115, z.w * 0.135, a * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#eefde4"; ctx.lineCap = "round";  // 開いた指
+      ctx.lineWidth = z.w * 0.062;
+      for(let f = -2; f <= 2; f++){
+        const fa = f * 0.34 + a * 0.18;
+        ctx.beginPath();
+        ctx.moveTo(tipX, tipY + z.w * 0.05);
+        ctx.lineTo(tipX + Math.sin(fa) * z.w * 0.24, tipY + z.w * 0.05 - Math.cos(fa) * z.w * 0.26);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 0.55 * (1 - q * 0.35);             // 指の関節の影
+      ctx.strokeStyle = "#7fae6d"; ctx.lineWidth = z.w * 0.016;
+      for(let f = -2; f <= 2; f++){
+        const fa = f * 0.34 + a * 0.18;
+        ctx.beginPath();
+        ctx.moveTo(tipX + Math.sin(fa) * z.w * 0.10, tipY + z.w * 0.05 - Math.cos(fa) * z.w * 0.11);
+        ctx.lineTo(tipX + Math.sin(fa) * z.w * 0.20, tipY + z.w * 0.05 - Math.cos(fa) * z.w * 0.22);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 0.95 * (1 - q * 0.35);
+    }
+  }
+}
+
 /* 予告と一撃。技ごとに当たり方の絵が違う。 */
 function drawBossZone(){
   const B = state.boss;
@@ -947,8 +1485,9 @@ function drawBossZone(){
   const zones = bossZones(B);
 
   ctx.save();
+  if(B.who === "pharaoh"){ drawPharaohZone(B, zones); ctx.restore(); return; }
   if(B.mode === "tell"){
-    const pulse = 0.22 + 0.30 * Math.abs(Math.sin((B.t / CONFIG.bossTell) * Math.PI * 5));
+    const pulse = 0.22 + 0.30 * Math.abs(Math.sin((B.t / tellTime(B)) * Math.PI * 5));
     for(const z of zones){
       ctx.globalAlpha = pulse;
       ctx.fillStyle = "#ff4b3e";
@@ -1057,6 +1596,16 @@ function quakeLevel(){
 
 /* 画面の揺れ幅 */
 function quakeShake(){ return quakeLevel() * 5.5; }
+
+/* 番人の一撃と、棺が割れるあいだの揺れ。当たった感じが画面に出る。 */
+function bossShake(){
+  const B = state.boss;
+  if(!B) return 0;
+  if(B.mode === "strike") return (B.who === "pharaoh" ? 7.5 : 4.5) * (1 - B.t / CONFIG.bossStrike);
+  if(B.who === "pharaoh" && B.mode === "rise") return 2.6 * Math.min(1, B.t / 0.6);
+  if(B.who === "pharaoh" && B.mode === "fall") return 5.0 * Math.max(0, 1 - B.t / 3.0);
+  return 0;
+}
 
 /* 落ちてくる石。赤と同じ扱いにしてあるので、シールドもハサミもヘビも効く。 */
 function spawnRubble(d){
@@ -1338,12 +1887,13 @@ function rippleDelete(){
    ========================================================== */
 function draw(){
   ctx.save();
-  const shake = quakeShake();                      // 崩落のあいだ画面が揺れる
+  const shake = quakeShake() + bossShake();        // 崩落と、番人の一撃で画面が揺れる
   if(shake) ctx.translate((Math.random() * 2 - 1) * shake, (Math.random() * 2 - 1) * shake);
   paintBackdrop();
   drawProps(livePal());
   drawRuinProps();
   drawGround(SCENES[state.phase].ground);
+  drawTomb();
   drawBoss();
 
   for(const b of state.blocks) drawBlock(b);
@@ -1650,7 +2200,7 @@ const SCENES = [
   { at:  56, label:"古代遺跡",   ground:"stone", indoor:true, propKind:"ruins", pal:RUIN_PAL, domain:"ruins", boss:"anubis", paint:paintRuins },
   { at:  90, label:"薄明",       ground:"sand", pal:PHASES[4], domain:"desert", paint:g => paintDesert(g, PHASES[4]) },
   { at: 104, label:"スフィンクス", ground:"sandFar", pal:PHASES[5], domain:"desert", boss:"sphinx", paint:paintSphinx },
-  { at: 130, label:"王墓",       ground:"slab",  indoor:true, domain:"tomb", paint:paintChamber },
+  { at: 132, label:"王墓",       ground:"slab",  indoor:true, domain:"tomb", boss:"pharaoh", paint:paintChamber },
 ];
 
 /* 足元の地面。視点は変えずに、模様だけを手前へ流して
@@ -2118,13 +2668,21 @@ function paintChamber(g){
   floor.addColorStop(1, "#0b0806");
   g.fillStyle = floor; g.fillRect(0, H * 0.82, W, H * 0.18);
 
-  sarcophagus(g, W * 0.68, H * 0.89, Math.min(W * 0.20, H * 0.22), H * 0.44);
+  // 石棺はここには描かない。開くので、毎フレーム drawTomb() で描く。
 }
 
 /* 石棺。立てた人型の棺。エジプトのものだと一目で分かる形なので、
-   横たえた箱ではなくこちらにした。光は左から当たっている。 */
-function sarcophagus(g, cx, baseY, w, h){
+   横たえた箱ではなくこちらにした。open が 0 なら閉じたまま、
+   1 まで上げると中央から割れて、二枚の蓋が外へ倒れていく。 */
+function sarcophagus(g, cx, baseY, w, h, open, B){
+  open = open || 0;
   const S = "#463a2f", L = "#61503e", GOLD = "#d8b169", GOLD2 = "#f2dda6", D = "#241c16";
+  const crack = Math.min(1, open / 0.30);              // 割れ目が入るまで
+  const swing = Math.max(0, (open - 0.26) / 0.74);     // 蓋が倒れていく
+  const e     = swing * swing;
+
+  // 割れる直前、石が震える
+  const trem = (open > 0.02 && open < 0.34) ? (Math.random() * 2 - 1) * w * 0.012 : 0;
 
   // 棺の輪郭。肩の張り出しと丸い頭で人型に見せる。
   const body = () => {
@@ -2138,54 +2696,107 @@ function sarcophagus(g, cx, baseY, w, h){
     g.quadraticCurveTo(cx - w * 0.52, baseY - h * 0.68, cx - w * 0.44, baseY - h * 0.50);
     g.closePath();
   };
-  g.fillStyle = S; body(); g.fill();
 
-  g.save();                                   // 左半分だけ明るく
-  body(); g.clip();
-  g.fillStyle = L;
-  g.fillRect(cx - w * 0.6, baseY - h, w * 0.42, h);
-  g.restore();
+  // 閉じた棺いちまいぶんの絵。左右に割ったあとも、これを各々が自分の側だけ写す。
+  const face = () => {
+    g.fillStyle = S; body(); g.fill();
+    g.save(); body(); g.clip();                 // 左半分だけ明るく
+    g.fillStyle = L; g.fillRect(cx - w * 0.6, baseY - h, w * 0.42, h);
+    g.restore();
 
-  // ネメス頭巾
-  g.fillStyle = GOLD;
-  g.beginPath();
-  g.moveTo(cx - w * 0.30, baseY - h * 0.76);
-  g.quadraticCurveTo(cx - w * 0.32, baseY - h * 0.97, cx, baseY - h * 0.97);
-  g.quadraticCurveTo(cx + w * 0.32, baseY - h * 0.97, cx + w * 0.30, baseY - h * 0.76);
-  g.lineTo(cx + w * 0.20, baseY - h * 0.76);
-  g.lineTo(cx + w * 0.20, baseY - h * 0.88);
-  g.lineTo(cx - w * 0.20, baseY - h * 0.88);
-  g.lineTo(cx - w * 0.20, baseY - h * 0.76);
-  g.closePath(); g.fill();
+    g.fillStyle = GOLD;                         // ネメス頭巾
+    g.beginPath();
+    g.moveTo(cx - w * 0.30, baseY - h * 0.76);
+    g.quadraticCurveTo(cx - w * 0.32, baseY - h * 0.97, cx, baseY - h * 0.97);
+    g.quadraticCurveTo(cx + w * 0.32, baseY - h * 0.97, cx + w * 0.30, baseY - h * 0.76);
+    g.lineTo(cx + w * 0.20, baseY - h * 0.76);
+    g.lineTo(cx + w * 0.20, baseY - h * 0.88);
+    g.lineTo(cx - w * 0.20, baseY - h * 0.88);
+    g.lineTo(cx - w * 0.20, baseY - h * 0.76);
+    g.closePath(); g.fill();
 
-  // 顔
-  g.fillStyle = GOLD2;
-  g.beginPath();
-  g.ellipse(cx, baseY - h * 0.855, w * 0.20, h * 0.075, 0, 0, Math.PI * 2);
-  g.fill();
-  g.fillStyle = D;                            // 目
-  g.beginPath(); g.ellipse(cx - w * 0.085, baseY - h * 0.865, w * 0.035, h * 0.014, 0, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.ellipse(cx + w * 0.085, baseY - h * 0.865, w * 0.035, h * 0.014, 0, 0, Math.PI * 2); g.fill();
-  g.fillStyle = D;                            // 顎ひげ
-  g.fillRect(cx - w * 0.035, baseY - h * 0.80, w * 0.07, h * 0.055);
+    g.fillStyle = GOLD2;                        // 顔
+    g.beginPath();
+    g.ellipse(cx, baseY - h * 0.855, w * 0.20, h * 0.075, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = D;                            // 目
+    g.beginPath(); g.ellipse(cx - w * 0.085, baseY - h * 0.865, w * 0.035, h * 0.014, 0, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.ellipse(cx + w * 0.085, baseY - h * 0.865, w * 0.035, h * 0.014, 0, 0, Math.PI * 2); g.fill();
+    g.fillRect(cx - w * 0.035, baseY - h * 0.80, w * 0.07, h * 0.055);   // 顎ひげ
 
-  // 胸の襟と、縦に走る碑文帯
-  g.fillStyle = GOLD;
-  g.beginPath();
-  g.moveTo(cx - w * 0.30, baseY - h * 0.74);
-  g.quadraticCurveTo(cx, baseY - h * 0.62, cx + w * 0.30, baseY - h * 0.74);
-  g.lineTo(cx + w * 0.30, baseY - h * 0.70);
-  g.quadraticCurveTo(cx, baseY - h * 0.58, cx - w * 0.30, baseY - h * 0.70);
-  g.closePath(); g.fill();
-  g.fillRect(cx - w * 0.055, baseY - h * 0.60, w * 0.11, h * 0.54);
-  g.fillStyle = D;                            // 帯の中の刻み
-  for(let k = 0; k < 6; k++){
-    g.fillRect(cx - w * 0.028, baseY - h * (0.56 - k * 0.085), w * 0.056, h * 0.022);
+    g.fillStyle = GOLD;                         // 胸の襟と、縦に走る碑文帯
+    g.beginPath();
+    g.moveTo(cx - w * 0.30, baseY - h * 0.74);
+    g.quadraticCurveTo(cx, baseY - h * 0.62, cx + w * 0.30, baseY - h * 0.74);
+    g.lineTo(cx + w * 0.30, baseY - h * 0.70);
+    g.quadraticCurveTo(cx, baseY - h * 0.58, cx - w * 0.30, baseY - h * 0.70);
+    g.closePath(); g.fill();
+    g.fillRect(cx - w * 0.055, baseY - h * 0.60, w * 0.11, h * 0.54);
+    g.fillStyle = D;                            // 帯の中の刻み
+    for(let k = 0; k < 6; k++){
+      g.fillRect(cx - w * 0.028, baseY - h * (0.56 - k * 0.085), w * 0.056, h * 0.022);
+    }
+  };
+
+  // 棺の中。開くほど強い光が漏れる。蓋が退いたあとは、ここが凹みとして残る。
+  if(crack > 0){
+    g.save();
+    body(); g.clip();
+    g.fillStyle = "#0a0704"; g.fillRect(cx - w, baseY - h, w * 2, h);
+    const inner = g.createLinearGradient(cx, baseY - h * 0.95, cx, baseY);
+    const pw = 0.30 + 0.70 * crack;
+    inner.addColorStop(0,   "rgba(255,238,180," + (0.95 * pw).toFixed(3) + ")");
+    inner.addColorStop(0.6, "rgba(255,168,60,"  + (0.70 * pw).toFixed(3) + ")");
+    inner.addColorStop(1,   "rgba(255,110,30,0)");
+    g.fillStyle = inner;
+    g.fillRect(cx - w * 0.42, baseY - h, w * 0.84, h);
+    g.restore();
+
+    // 割れ目から外へ抜ける光の柱
+    g.save();
+    const beam = g.createLinearGradient(cx, baseY - h * 1.35, cx, baseY);
+    beam.addColorStop(0, "rgba(255,225,150,0)");
+    beam.addColorStop(1, "rgba(255,225,150," + (0.34 * crack).toFixed(3) + ")");
+    g.fillStyle = beam;
+    const bw = w * (0.05 + 0.42 * crack);
+    g.beginPath();
+    g.moveTo(cx - bw * 0.30, baseY - h * 1.35); g.lineTo(cx + bw * 0.30, baseY - h * 1.35);
+    g.lineTo(cx + bw, baseY); g.lineTo(cx - bw, baseY);
+    g.closePath(); g.fill();
+    g.restore();
   }
+
+  // 二枚の蓋。観音開きに開いて、外へ抜けながら消える。
+  // 床に倒しておくと、転がった別の何かに見えてしまうので残さない。
+  const gap  = crack * w * 0.030;
+  const goneL = Math.max(0, (open - 0.72) / 0.28);        // 開ききってから退く
+  if(goneL < 1){
+    for(const sign of [-1, 1]){
+      g.save();
+      g.globalAlpha = 1 - goneL;
+      const px = cx + sign * w * 0.42, py = baseY;
+      g.translate(px + trem, py);
+      g.rotate(sign * e * 0.62);                          // 扉のように開く
+      g.translate(-px, -py);
+      g.translate(sign * (e * w * 0.16 + goneL * w * 0.9), 0);
+      g.beginPath();
+      if(sign < 0) g.rect(cx - w * 1.2, baseY - h * 1.10, w * 1.2 - gap, h * 1.12);
+      else         g.rect(cx + gap,     baseY - h * 1.10, w * 1.2,       h * 1.12);
+      g.clip();
+      face();
+      if(e > 0){                                          // 開いた面は中の光の陰になる
+        g.globalAlpha = (1 - goneL) * Math.min(0.62, e * 0.95);
+        g.fillStyle = "#0b0805";
+        g.fillRect(cx - w * 1.2, baseY - h * 1.10, w * 2.4, h * 1.12);
+      }
+      g.restore();
+    }
+  }
+  g.globalAlpha = 1;
 
   // 足元の影
   g.fillStyle = "rgba(0,0,0,.45)";
-  g.fillRect(cx - w * 0.42, baseY - h * 0.012, w * 0.84, h * 0.03);
+  g.fillRect(cx - w * 0.52, baseY - h * 0.012, w * 1.04, h * 0.03);
 }
 
 /* 古代遺跡の内部。夜のいちばん深い時間に潜る場所。
@@ -2527,7 +3138,7 @@ function clearGame(){
   btn.hidden = true;
   if(SOUND.noiseGain) SOUND.noiseGain.gain.value = 0;
   SFX.clear();
-  if(state.elapsed > best){
+  if(state.elapsed > best && !LEADERBOARD.testing){
     best = state.elapsed;
     localStorage.setItem("dodgeBest", String(best));
     document.getElementById("best").textContent = toTimecode(best);
@@ -2540,7 +3151,7 @@ function clearGame(){
 function gameOver(){
   state.running = false;
   btn.textContent = "もう一度";
-  if(state.elapsed > best){
+  if(state.elapsed > best && !LEADERBOARD.testing){
     best = state.elapsed;
     localStorage.setItem("dodgeBest", String(best));
     document.getElementById("best").textContent = toTimecode(best);
@@ -2702,6 +3313,14 @@ const SFX = {
   ripple: () => { noiseBurst(0.5, 0.24, 2600, 180); tone(95, 0.55, "sine", 0.20, 40); },
   scene:  () => { tone(120, 1.5, "sine", 0.13, 195); tone(182, 1.2, "triangle", 0.05, 245); },
   rumble: () => { tone(58, 2.2, "sine", 0.22, 34); noiseBurst(1.8, 0.14, 150, 60); },
+  lid:    () => { noiseBurst(1.6, 0.22, 300, 60); tone(70, 1.8, "sawtooth", 0.17, 44);
+                  setTimeout(() => noiseBurst(0.5, 0.20, 1800, 300), 900); },
+  wail:   () => { tone(330, 1.7, "sawtooth", 0.12, 186); tone(220, 1.9, "triangle", 0.08, 124); },
+  judge:  () => { [784, 988, 1319].forEach((f, i) => setTimeout(() => tone(f, 0.5, "triangle", 0.11), i * 55));
+                  noiseBurst(0.4, 0.11, 3200, 900); },
+  soul:   () => { tone(175, 0.8, "sine", 0.13, 430); noiseBurst(0.55, 0.10, 950, 240); },
+  crumble:() => { noiseBurst(2.4, 0.22, 460, 55); tone(62, 2.6, "sine", 0.20, 28);
+                  setTimeout(() => noiseBurst(1.2, 0.16, 900, 120), 500); },
 };
 
 const muteBtn = document.getElementById("muteBtn");
@@ -2724,6 +3343,7 @@ muteBtn.addEventListener("click", e => {
    12. 順位表 ─ 遊び終わったらその場で送って、その場で順位を出す
    ========================================================== */
 const LEADERBOARD = {
+  testing: false,   // 確認用モード（?rec）のときだけ true。記録を一切残さない
   endpoint: "https://script.google.com/macros/s/AKfycbx1E2fsGC3nfXo3gQ9WsawWi6Msvi7GaTCZfN6bRzU0KBBIZ21PSKc5WGVDwDwSPXVShw/exec",   // ← Google Apps Script のURLをここに入れる。空なら順位表を出さない。
   top: 10,
   minSec: 5,      // これ未満は送らない（誤操作を弾く）
@@ -2979,6 +3599,10 @@ if(!LEADERBOARD.endpoint) document.getElementById("actRank").hidden = true;
 const recArg = new URLSearchParams(location.search).get("rec");
 if(recArg !== null){
   const n = Number(recArg);
+  // 場面を動かす前に、番人が「場面の何秒後に出るか」を控えておく。
+  const lead = {};
+  for(const sc of SCENES) if(sc.boss) lead[sc.boss] = BOSS_DEF[sc.boss].at - sc.at;
+
   if(!recArg || !isFinite(n) || n <= 0){
     SCENES.forEach((sc, i) => { sc.at = i * 15; });       // 頭から全場面を15秒ずつ
     TITLES.forEach((t,  i) => { t.at  = i * 15; });
@@ -2988,12 +3612,18 @@ if(recArg !== null){
     SCENES.forEach((sc, i) => { sc.at = shift(i); });
     TITLES.forEach((t,  i) => { t.at  = shift(i); });
   }
+  // 番人も一緒に連れていく。置き去りにすると確認用モードで出てこない。
+  for(const sc of SCENES) if(sc.boss) BOSS_DEF[sc.boss].at = sc.at + Math.min(4, lead[sc.boss]);
   // 仕掛けもすぐ来るように詰める
   CONFIG.landmarkLead = 12;
   CONFIG.stormEvery   = 10;  CONFIG.stormTime = 8;
   CONFIG.quakeEvery   = 7;   CONFIG.quakeTime = 7;
+  // 確認用モードは順位表にも自己ベストにも残さない。
+  // 仕掛けの来る間隔が違うので、普通に遊んだ人と同じ表に並べては不公平になる。
+  LEADERBOARD.endpoint = "";
+  LEADERBOARD.testing  = true;
   const hint = document.querySelector(".hint");
-  if(hint) hint.textContent = "確認用モード：15秒ごとに場面が進みます";
+  if(hint) hint.textContent = "確認用モード：15秒ごとに場面が進みます（記録は残りません）";
 }
 
 /* 起動 */
