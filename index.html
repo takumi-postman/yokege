@@ -1169,10 +1169,10 @@ const SCENES = [
 /* 足元の地面。視点は変えずに、模様だけを手前へ流して
    「歩いて前に進んでいる」ように見せる。奥は細く薄く、手前ほど太く広がる。 */
 const GROUND = {
-  sand:    { top:0.83, rows:15, kind:"ripple", color:"255,226,182", alpha:0.20 },
-  sandFar: { top:0.87, rows:13, kind:"ripple", color:"255,222,176", alpha:0.20 },
-  stone:   { top:0.86, rows:8,  kind:"seam",   color:"150,116,72",  alpha:0.55 },
-  slab:    { top:0.82, rows:9,  kind:"seam",   color:"120,104,86",  alpha:0.50 },
+  sand:    { top:0.83, rows:9, kind:"ripple", color:"255,226,182", alpha:0.16 },
+  sandFar: { top:0.87, rows:8, kind:"ripple", color:"255,222,176", alpha:0.16 },
+  stone:   { top:0.86, rows:7, kind:"seam",   color:"150,116,72",  alpha:0.50 },
+  slab:    { top:0.82, rows:8, kind:"seam",   color:"120,104,86",  alpha:0.45 },
 };
 
 function drawGround(name){
@@ -1185,17 +1185,24 @@ function drawGround(name){
     // 0（地平）から 1（足元）へ。2乗しているので手前ほど速く流れて見える。
     const p = (state.travel + i / G.rows) % 1;
     const y = top + span * p * p;
-    const halfW = W * (0.10 + p * 0.78);
+
+    // 1本ずつ決まったばらつきを持たせる。等間隔の直線だとブラインドに見えるため。
+    const jit = Math.sin(i * 12.9898) * 0.5 + 0.5;
+    const halfW = W * (0.10 + p * 0.78) * (0.82 + jit * 0.34);
+    const cx = W / 2 + W * (jit - 0.5) * 0.10 * p;
+
     ctx.globalAlpha = Math.min(1, p * 2.4) * G.alpha;
     ctx.strokeStyle = "rgb(" + G.color + ")";
     ctx.lineWidth = 0.7 + p * 2.3;
     ctx.beginPath();
-    if(G.kind === "ripple"){                       // 砂の風紋。ゆるく波打たせる。
-      ctx.moveTo(W / 2 - halfW, y);
-      ctx.quadraticCurveTo(W / 2, y + span * 0.05 * p, W / 2 + halfW, y);
+    if(G.kind === "ripple"){                       // 砂の風紋。大きく波打たせる。
+      const bow = span * (0.14 + jit * 0.20) * p * (jit > 0.5 ? 1 : -1);
+      ctx.moveTo(cx - halfW, y);
+      ctx.quadraticCurveTo(cx - halfW * 0.35, y + bow, cx, y + bow * 0.30);
+      ctx.quadraticCurveTo(cx + halfW * 0.35, y - bow * 0.40, cx + halfW, y);
     } else {                                       // 石畳の目地。まっすぐ。
-      ctx.moveTo(W / 2 - halfW, y);
-      ctx.lineTo(W / 2 + halfW, y);
+      ctx.moveTo(cx - halfW, y);
+      ctx.lineTo(cx + halfW, y);
     }
     ctx.stroke();
   }
