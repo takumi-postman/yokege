@@ -297,7 +297,7 @@ const CONFIG = {
 
   // --- 歩く速さ ---
   travelSpeed: 0.095,   // 地平線から足元まで約10秒。歩いている速さ。
-  propEvery:   0.055,   // 景色のものが生まれる間隔（travel 単位）
+  propEvery:   0.042,   // 景色のものが生まれる間隔（travel 単位）
   landmarkLead:  25,    // 目印を何秒前に地平線へ置くか（着く頃に画面いっぱいになる）
 
   // --- 時間帯 ---
@@ -1185,7 +1185,7 @@ const SCENES = [
 /* 足元の地面。視点は変えずに、模様だけを手前へ流して
    「歩いて前に進んでいる」ように見せる。奥は細く薄く、手前ほど太く広がる。 */
 const GROUND = {
-  sand:    { top:0.66, rows:26, kind:"ripple", color:"255,226,182", alpha:0.13 },
+  sand:    { top:0.66, rows:12, kind:"ripple", color:"255,226,182", alpha:0.11 },
   sandFar: { top:0.87, rows:10, kind:"ripple", color:"255,222,176", alpha:0.16 },
   stone:   { top:0.86, rows:10, kind:"seam",   color:"150,116,72",  alpha:0.50 },
   slab:    { top:0.82, rows:11, kind:"seam",   color:"120,104,86",  alpha:0.45 },
