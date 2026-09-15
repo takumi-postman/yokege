@@ -465,10 +465,9 @@ function update(dt, now){
   for(let i = 0; i < SCENES.length; i++) if(state.elapsed >= SCENES[i].at) p = i;
   if(p !== state.phase){
     state.prevPal = SCENES[state.phase].pal || SCENES[p].pal;
-    // 前の場面のものは足早に通り過ぎさせる。溶暗が終わる前に画面から出したい。
-    const nowRuins = SCENES[p].propKind === "ruins";
+    // よその世界のものは足早に通り過ぎさせる。溶暗が終わる前に画面から出したい。
     for(const o of state.props){
-      if(!!RUIN_KINDS[o.kind] !== nowRuins){ o.rush = 5; o.slow = 1; }
+      if(propDomain(o) !== SCENES[p].domain){ o.rush = 5; o.slow = 1; }
     }
     state.phase = p; state.phaseAt = state.elapsed; state.phaseLabel = 3.0;
     setBackdrop(p, false);
@@ -1326,14 +1325,14 @@ const RUIN_PAL = { veg:["#4a3a24","#2e2316","#1a130c"], water:["#2a3d3a","#121d1
 /* 場面の並び。旅の順番そのもの。
    夕暮れに歩き出して、夜がいちばん深いところで遺跡に潜り、抜けると夜明けが待っている。 */
 const SCENES = [
-  { at:   0, label:"夕暮れ",     ground:"sand", pal:PHASES[0], paint:g => paintDesert(g, PHASES[0]) },
-  { at:  20, label:"日没",       ground:"sand", pal:PHASES[1], paint:g => paintDesert(g, PHASES[1]) },
-  { at:  40, label:"宵",         ground:"sand", pal:PHASES[2], paint:g => paintDesert(g, PHASES[2]) },
-  { at:  60, label:"夜",         ground:"sand", pal:PHASES[3], paint:g => paintDesert(g, PHASES[3]) },
-  { at:  80, label:"古代遺跡",   ground:"stone", indoor:true, propKind:"ruins", pal:RUIN_PAL, paint:paintRuins },
-  { at: 120, label:"薄明",       ground:"sand", pal:PHASES[4], paint:g => paintDesert(g, PHASES[4]) },
-  { at: 140, label:"スフィンクス", ground:"sandFar", pal:PHASES[5], landmark:"sphinx", paint:paintSphinx },
-  { at: 200, label:"王墓",       ground:"slab",  indoor:true,   paint:paintChamber },
+  { at:   0, label:"夕暮れ",     ground:"sand", pal:PHASES[0], domain:"desert", paint:g => paintDesert(g, PHASES[0]) },
+  { at:  20, label:"日没",       ground:"sand", pal:PHASES[1], domain:"desert", paint:g => paintDesert(g, PHASES[1]) },
+  { at:  40, label:"宵",         ground:"sand", pal:PHASES[2], domain:"desert", paint:g => paintDesert(g, PHASES[2]) },
+  { at:  60, label:"夜",         ground:"sand", pal:PHASES[3], domain:"desert", paint:g => paintDesert(g, PHASES[3]) },
+  { at:  80, label:"古代遺跡",   ground:"stone", indoor:true, propKind:"ruins", pal:RUIN_PAL, domain:"ruins", paint:paintRuins },
+  { at: 120, label:"薄明",       ground:"sand", pal:PHASES[4], domain:"desert", paint:g => paintDesert(g, PHASES[4]) },
+  { at: 140, label:"スフィンクス", ground:"sandFar", pal:PHASES[5], domain:"desert", landmark:"sphinx", paint:paintSphinx },
+  { at: 200, label:"王墓",       ground:"slab",  indoor:true, domain:"tomb", paint:paintChamber },
 ];
 
 /* 足元の地面。視点は変えずに、模様だけを手前へ流して
@@ -1377,9 +1376,11 @@ function depthColor(veg, p){
 
 /* いま描くべき風景の色。場面が移っている最中は、前の場面の色と混ざる。 */
 function livePal(){
-  const cur = SCENES[state.phase].pal;
-  if(!cur) return null;
+  const cur  = SCENES[state.phase].pal;
   const prev = state.prevPal;
+  // 王墓のように色を持たない場面でも、溶暗の最中は前の色で描き続ける。
+  // ここで打ち切ると、スフィンクスやヤシが一瞬で消えてしまう。
+  if(!cur) return (bdFade < 1 && prev) ? prev : null;
   if(!prev || bdFade >= 1) return cur;
   const t = ease(bdFade);
   return {
@@ -1435,10 +1436,10 @@ function spawnLandmark(kind){
 function updateProps(step){
   // 場面が変わりきったら、前の場面のものは残さない。
   // 遺跡にピラミッドが残ったり、砂漠にアヌビス像が居座ったりするのを防ぐ。
-  const wantRuins = SCENES[state.phase].propKind === "ruins";
+  const here = SCENES[state.phase].domain;
   if(bdFade >= 1){
     for(let i = state.props.length - 1; i >= 0; i--){
-      if(!!RUIN_KINDS[state.props[i].kind] !== wantRuins) state.props.splice(i, 1);
+      if(propDomain(state.props[i]) !== here) state.props.splice(i, 1);
     }
   }
 
@@ -1468,6 +1469,9 @@ function seedProps(){
 }
 
 const RUIN_KINDS = { col:1, anubis:1 };
+
+/* そのものがどの世界のものか。場面が変わったら、よその世界のものは退場させる。 */
+function propDomain(o){ return RUIN_KINDS[o.kind] ? "ruins" : "desert"; }
 
 function drawProps(P){
   if(!P) return;
