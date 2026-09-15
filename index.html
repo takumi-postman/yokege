@@ -232,10 +232,14 @@ const CONFIG = {
   blockMinWidth: 26,    // 落ちてくるクリップの最小幅
   blockMaxWidth: 80,    // 　　　　　　　　　　最大幅
   blockSpeed:    110,   // 落ちる速さ（開始時・px/秒）
-  speedGain:     11,    // 1秒たつごとに速くなる量
   spawnEvery:    593,   // 出現の間隔（開始時・ミリ秒）
-  spawnGain:     19,    // 1秒たつごとに間隔が縮む量
   spawnMin:      200,   // 間隔の下限（これ以上は詰まらない）
+
+  // 難易度の上がり方。まっすぐ上げると21秒で最高難度に達してしまい、
+  // 初見の人が何も見ないまま終わる。序盤を緩く、後半で追い上げる曲線にする。
+  rampPower:    1.6,    // 大きいほど「最初ゆるく、あとで急」
+  speedGain:   0.34,    // 落下速度の伸び（5分時点は従来とほぼ同じ厳しさに戻る）
+  spawnGain:   0.10,    // 間隔の詰まり（約3分で下限に届く）
   speedSoftCap: 520,    // 落下速度がここを超えたら、伸びが緩やかになる
   speedTaper:   0.25,   // 超えたあとの伸び方（0.25 = 4分の1の速さで伸びる）
 
@@ -673,13 +677,14 @@ function spawn(dt, r){
         : LAB.drift       ? (Math.random() * 2 - 1) * 75 // 試作トグル
         : 0,
   });
-  state.spawnTimer = Math.max(CONFIG.spawnMin, CONFIG.spawnEvery - d * CONFIG.spawnGain) / 1000;
+  state.spawnTimer = Math.max(CONFIG.spawnMin,
+                    CONFIG.spawnEvery - CONFIG.spawnGain * Math.pow(d, CONFIG.rampPower)) / 1000;
 }
 
 /* 落下速度。天井を超えたら伸びを鈍らせる。
    青天井だと一度崩れたときに戻れなくなるので、上ほど緩やかにしている。 */
 function fallSpeed(d){
-  const raw = CONFIG.blockSpeed + d * CONFIG.speedGain;
+  const raw = CONFIG.blockSpeed + CONFIG.speedGain * Math.pow(d, CONFIG.rampPower);
   if(raw <= CONFIG.speedSoftCap) return raw;
   return CONFIG.speedSoftCap + (raw - CONFIG.speedSoftCap) * CONFIG.speedTaper;
 }
@@ -1134,14 +1139,14 @@ const PHASES = [
 /* 場面の並び。旅の順番そのもの。
    夕暮れに歩き出して、夜がいちばん深いところで遺跡に潜り、抜けると夜明けが待っている。 */
 const SCENES = [
-  { at:   0, label:"夕暮れ",   paint:g => paintDesert(g, PHASES[0]) },
-  { at:  35, label:"日没",     paint:g => paintDesert(g, PHASES[1]) },
-  { at:  70, label:"宵",       paint:g => paintDesert(g, PHASES[2]) },
-  { at: 105, label:"夜",       paint:g => paintDesert(g, PHASES[3]) },
-  { at: 140, label:"古代遺跡", paint:paintRuins },
-  { at: 210, label:"薄明",       paint:g => paintDesert(g, PHASES[4]) },
-  { at: 245, label:"スフィンクス", paint:paintSphinx },
-  { at: 315, label:"王墓",       paint:paintChamber },
+  { at:   0, label:"夕暮れ",     paint:g => paintDesert(g, PHASES[0]) },
+  { at:  20, label:"日没",       paint:g => paintDesert(g, PHASES[1]) },
+  { at:  40, label:"宵",         paint:g => paintDesert(g, PHASES[2]) },
+  { at:  60, label:"夜",         paint:g => paintDesert(g, PHASES[3]) },
+  { at:  80, label:"古代遺跡",   paint:paintRuins },
+  { at: 120, label:"薄明",       paint:g => paintDesert(g, PHASES[4]) },
+  { at: 140, label:"スフィンクス", paint:paintSphinx },
+  { at: 200, label:"王墓",       paint:paintChamber },
 ];
 
 function setBackdrop(i, instant){
@@ -1883,13 +1888,13 @@ const startView = document.getElementById("startView");
    「どこまで見たか」がそのまま称号になる。280秒＝砂漠の一日を一周。 */
 const TITLES = [
   { at:   0, name:"砂を踏む者" },
-  { at:  35, name:"日没越え" },
-  { at:  70, name:"宵越え" },
-  { at: 105, name:"夜越え" },
-  { at: 140, name:"遺跡に入りし者" },
-  { at: 210, name:"遺跡を抜けし者" },
-  { at: 245, name:"スフィンクスに見えし者" },
-  { at: 315, name:"王墓に至る者" },
+  { at:  20, name:"日没越え" },
+  { at:  40, name:"宵越え" },
+  { at:  60, name:"夜越え" },
+  { at:  80, name:"遺跡に入りし者" },
+  { at: 120, name:"遺跡を抜けし者" },
+  { at: 140, name:"スフィンクスに見えし者" },
+  { at: 200, name:"王墓に至る者" },
 ];
 
 function titleFor(sec){
