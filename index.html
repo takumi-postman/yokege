@@ -308,6 +308,14 @@ const CONFIG = {
   // --- 時間帯 ---
   phaseEvery:   35,     // 何秒ごとに時間帯が変わるか（8つで一周＝4分40秒）
 
+  // --- アヌビス ---
+  bossAt:        68,    // 立ち上がる時刻（遺跡は56秒から）
+  bossRise:     2.2,    // 立ち上がるのにかかる秒数
+  bossAttacks:    4,    // 何回しのげば崩れるか
+  bossTell:     1.15,   // 予告（振りかぶり）の秒数
+  bossStrike:   0.40,   // 実際に当たっている秒数
+  bossGap:      1.45,   // 次の攻撃までの間
+
   // --- 遺跡の崩落 ---
   quakeEvery:   24,     // 崩落と崩落のあいだの秒数
   quakeWarn:   2.8,     // 揺れはじめ（予告）の秒数。読んで動く時間を含む
@@ -390,6 +398,7 @@ const state = {
   lives:       3,   // 残りの体力
   invuln:      0,   // 無敵の残り秒数
   cleared: false,   // 王墓まで辿り着いたか
+  boss:     null,   // アヌビス。遺跡の途中で立ち上がる
   quake:       0,   // 崩落の残り秒数
   quakeWarn:   0,   // 予兆の残り秒数
   quakeNext:   0,   // 次の崩落までの残り秒数
@@ -483,6 +492,8 @@ function update(dt, now){
   if(state.elapsed >= CONFIG.clearAt){ clearGame(); return; }   // 王墓を抜けて踏破
   updateStorm(dt);
   updateQuake(dt, r, state.difficulty);
+  updateBoss(dt);
+  if(!state.running) return;
 
   // 持続するものを減らす
   state.speedScale = Math.min(1, state.speedScale + CONFIG.slowRecover * dt);
@@ -744,10 +755,161 @@ function warnMark(x, y, r){
   ctx.beginPath(); ctx.arc(x, y + r * 0.50, r * 0.13, 0, Math.PI * 2); ctx.fill();
 }
 
+/* --- アヌビス --------------------------------------------- */
+/* 遺跡の途中で、通り過ぎるはずの像が1体だけ立ち上がる。
+   振りかぶり → 一撃 → 間合い、を4回。しのぎ切ると崩れ落ちて道が開く。
+   当たる場所は必ず先に赤で見せる。知らせずに当てるのは理不尽なので。 */
+function updateBoss(dt){
+  if(SCENES[state.phase].domain !== "ruins"){ state.boss = null; return; }
+  if(!state.boss && state.elapsed >= CONFIG.bossAt){
+    state.boss = { t:0, mode:"rise", left:CONFIG.bossAttacks, kind:"slam", x:W/2, side:1 };
+    SFX.rumble();
+    return;
+  }
+  const B = state.boss;
+  if(!B) return;
+  B.t += dt;
+
+  if(B.mode === "rise"){
+    if(B.t >= CONFIG.bossRise){ B.mode = "tell"; B.t = 0; aimBoss(B); }
+  } else if(B.mode === "tell"){
+    if(B.t >= CONFIG.bossTell){ B.mode = "strike"; B.t = 0; SFX.slam(); }
+  } else if(B.mode === "strike"){
+    bossHits(B);
+    if(!state.running) return;
+    if(B.t >= CONFIG.bossStrike){
+      B.left--;
+      B.mode = B.left <= 0 ? "fall" : "gap";
+      B.t = 0;
+      if(B.mode === "fall") SFX.rumble();
+    }
+  } else if(B.mode === "gap"){
+    if(B.t >= CONFIG.bossGap){ B.mode = "tell"; B.t = 0; aimBoss(B); }
+  }
+}
+
+function aimBoss(B){
+  B.kind = Math.random() < 0.55 ? "slam" : "sweep";
+  if(B.kind === "slam") B.x = W * (0.18 + Math.random() * 0.64);
+  else B.side = Math.random() < 0.5 ? -1 : 1;
+}
+
+/* 当たる範囲。予告と判定で同じものを使うので、見えている通りに当たる。 */
+function bossZone(B){
+  if(B.kind === "slam") return { x: B.x - W * 0.095, w: W * 0.19 };
+  return B.side < 0 ? { x: 0, w: W * 0.54 } : { x: W * 0.46, w: W * 0.54 };
+}
+
+function bossHits(B){
+  if(state.invuln > 0) return;
+  const z = bossZone(B), half = CONFIG.playerWidth / 2;
+  if(state.playerX + half > z.x && state.playerX - half < z.x + z.w){
+    state.lives--;
+    state.invuln = CONFIG.invulnTime;
+    SFX.hurt();
+    if(state.lives <= 0) gameOver();
+  }
+}
+
+/* 立ち上がったアヌビス。ジャッカルの頭と杖で、像と同じものだと分かるように。 */
+function drawBoss(){
+  const B = state.boss;
+  if(!B) return;
+  const rise = B.mode === "rise" ? Math.min(1, B.t / CONFIG.bossRise) : 1;
+  const fall = B.mode === "fall" ? Math.max(0, 1 - B.t / 2.2) : 1;
+  const h = H * 0.60 * rise * fall;
+  if(h < 2) return;
+
+  const cx = W / 2, baseY = H * 0.87;
+  const S = "#3f3020", L = "#6d5231", D = "#1a120b", GOLD = "#dcb75f";
+
+  ctx.save();
+  if(B.mode === "fall") ctx.globalAlpha = fall;
+
+  // 杖。振りかぶりで高く、一撃で下がる。
+  let ang = -0.35;
+  if(B.mode === "tell")   ang = -0.35 - 0.9 * (B.t / CONFIG.bossTell);
+  if(B.mode === "strike") ang = 0.85;
+  const sx = cx + 0.30 * h, sy = baseY - 0.62 * h;
+  ctx.save();
+  ctx.translate(sx, sy); ctx.rotate(ang);
+  ctx.fillStyle = D; ctx.fillRect(-0.018 * h, -0.55 * h, 0.036 * h, 0.95 * h);
+  ctx.fillStyle = GOLD; ctx.fillRect(-0.05 * h, -0.60 * h, 0.10 * h, 0.07 * h);
+  ctx.restore();
+
+  // 脚・腰布・胴
+  ctx.fillStyle = S;
+  ctx.fillRect(cx - 0.17 * h, baseY - 0.34 * h, 0.13 * h, 0.34 * h);
+  ctx.fillRect(cx + 0.04 * h, baseY - 0.34 * h, 0.13 * h, 0.34 * h);
+  ctx.fillStyle = L;
+  ctx.beginPath();
+  ctx.moveTo(cx - 0.20 * h, baseY - 0.30 * h); ctx.lineTo(cx + 0.20 * h, baseY - 0.30 * h);
+  ctx.lineTo(cx + 0.15 * h, baseY - 0.50 * h); ctx.lineTo(cx - 0.15 * h, baseY - 0.50 * h);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = S;
+  ctx.fillRect(cx - 0.16 * h, baseY - 0.70 * h, 0.32 * h, 0.22 * h);
+  ctx.fillStyle = GOLD;
+  ctx.fillRect(cx - 0.17 * h, baseY - 0.67 * h, 0.34 * h, 0.035 * h);
+
+  // 腕
+  ctx.fillStyle = S;
+  ctx.fillRect(cx + 0.14 * h, baseY - 0.68 * h, 0.17 * h, 0.055 * h);
+  ctx.fillRect(cx - 0.30 * h, baseY - 0.66 * h, 0.16 * h, 0.055 * h);
+
+  // 首と頭
+  ctx.fillRect(cx - 0.05 * h, baseY - 0.78 * h, 0.10 * h, 0.10 * h);
+  ctx.fillStyle = S;
+  ctx.beginPath();
+  ctx.ellipse(cx, baseY - 0.84 * h, 0.10 * h, 0.075 * h, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();                                   // 鼻面（手前に突き出す）
+  ctx.moveTo(cx - 0.02 * h, baseY - 0.87 * h);
+  ctx.lineTo(cx + 0.19 * h, baseY - 0.855 * h);
+  ctx.lineTo(cx + 0.19 * h, baseY - 0.805 * h);
+  ctx.lineTo(cx - 0.02 * h, baseY - 0.79 * h);
+  ctx.closePath(); ctx.fill();
+  for(const off of [-0.075, 0.035]){                 // 尖った耳
+    ctx.beginPath();
+    ctx.moveTo(cx + off * h,          baseY - 0.88 * h);
+    ctx.lineTo(cx + (off + 0.02) * h, baseY - 1.00 * h);
+    ctx.lineTo(cx + (off + 0.075) * h, baseY - 0.885 * h);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = GOLD;                              // 目
+  ctx.beginPath(); ctx.arc(cx + 0.045 * h, baseY - 0.845 * h, 0.017 * h, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+/* 攻撃の予告と、当たっている瞬間。見えている範囲がそのまま当たり判定。 */
+function drawBossZone(){
+  const B = state.boss;
+  if(!B || (B.mode !== "tell" && B.mode !== "strike")) return;
+  const z = bossZone(B);
+  ctx.save();
+  if(B.mode === "tell"){
+    const t = B.t / CONFIG.bossTell;
+    ctx.globalAlpha = 0.22 + 0.30 * Math.abs(Math.sin(t * Math.PI * 5));
+    ctx.fillStyle = "#ff4b3e";
+    ctx.fillRect(z.x, 0, z.w, H);
+    ctx.globalAlpha = 0.95;
+    ctx.strokeStyle = "#ff8076"; ctx.lineWidth = 3;
+    ctx.strokeRect(z.x + 1.5, 1.5, z.w - 3, H - 3);
+  } else {
+    ctx.globalAlpha = 0.85 * (1 - B.t / CONFIG.bossStrike);
+    ctx.fillStyle = "#ffe9e6";
+    ctx.fillRect(z.x, 0, z.w, H);
+  }
+  ctx.restore();
+}
+
 /* --- 遺跡の崩落 ------------------------------------------ */
 /* 砂嵐の代わりに、遺跡の中だけで起きる。天井が揺れて石が降ってくる。 */
 function updateQuake(dt, r, d){
   if(SCENES[state.phase].propKind !== "ruins"){
+    state.quake = 0; state.quakeWarn = 0; state.quakeNext = CONFIG.quakeEvery;
+    return;
+  }
+  if(state.boss && state.boss.mode !== "fall"){   // アヌビス戦のあいだ崩落は止める
     state.quake = 0; state.quakeWarn = 0; state.quakeNext = CONFIG.quakeEvery;
     return;
   }
@@ -848,7 +1010,10 @@ function spawn(dt, r){
 
   // 石が降っているあいだは赤を間引く。石と赤が同じ量だと、そこだけ難度が跳ね上がる。
   // 間引くのは赤だけで、アイテムの出方はそのまま。
-  if(state.quake > 0 && kind === "red" && Math.random() < CONFIG.quakeRedCut){
+  // アヌビスと対しているあいだは、落ちものをぐっと減らす。相手は1体でいい。
+  const bossy = state.boss && state.boss.mode !== "fall";
+  if(kind === "red" && (bossy ? Math.random() < 0.75
+                              : state.quake > 0 && Math.random() < CONFIG.quakeRedCut)){
     state.spawnTimer = Math.max(CONFIG.spawnMin,
                       CONFIG.spawnEvery - CONFIG.spawnGain * Math.pow(d, CONFIG.rampPower)) / 1000;
     return;
@@ -1061,6 +1226,7 @@ function draw(){
   drawProps(livePal());
   drawRuinProps();
   drawGround(SCENES[state.phase].ground);
+  drawBoss();
 
   for(const b of state.blocks) drawBlock(b);
   drawDebris();
@@ -1069,6 +1235,7 @@ function draw(){
   drawPlayer(state.playerX);
   drawCutPips();
   drawShield();
+  drawBossZone();
   drawSandHaze();          // ← ブロックもアイテムも、この砂の向こうになる
   drawSandStreaks();
   drawPanicEdge();
@@ -2225,7 +2392,7 @@ function start(){
     storm:0, stormWarn:0, stormNext:CONFIG.stormEvery, wind:0, sand:[], travel:0,
     props:[], propTimer:0, landmarkFor:-1, prevPal:null,
     quake:0, quakeWarn:0, quakeNext:CONFIG.quakeEvery, rubbleTimer:0,
-    lives:CONFIG.lives, invuln:0, cleared:false,
+    lives:CONFIG.lives, invuln:0, cleared:false, boss:null,
   });
   seedProps();
   setBackdrop(0, true);
@@ -2285,7 +2452,7 @@ function showStart(){
                          storm:0, stormWarn:0, stormNext:CONFIG.stormEvery, travel:0,
                          props:[], propTimer:0, landmarkFor:-1, prevPal:null,
                          quake:0, quakeWarn:0, quakeNext:CONFIG.quakeEvery, rubbleTimer:0,
-                         lives:CONFIG.lives, invuln:0, cleared:false,
+                         lives:CONFIG.lives, invuln:0, cleared:false, boss:null,
                          wind:0, sand:[], blocks:[], snakes:[], scarabs:[], debris:[] });
   seedProps();
   setBackdrop(0, true);
@@ -2413,6 +2580,7 @@ const SFX = {
   hit:    () => { tone(165, 0.5, "sawtooth", 0.26, 42); noiseBurst(0.32, 0.17, 320, 90); },
   hurt:   () => { tone(230, 0.20, "sawtooth", 0.18, 95); noiseBurst(0.14, 0.11, 420, 170); },
   clear:  () => { [523,659,784,1047].forEach((f,i) => setTimeout(() => tone(f, 0.5, "triangle", 0.16), i * 140)); },
+  slam:   () => { tone(110, 0.35, "square", 0.24, 45); noiseBurst(0.28, 0.20, 700, 180); },
   ripple: () => { noiseBurst(0.5, 0.24, 2600, 180); tone(95, 0.55, "sine", 0.20, 40); },
   scene:  () => { tone(120, 1.5, "sine", 0.13, 195); tone(182, 1.2, "triangle", 0.05, 245); },
   rumble: () => { tone(58, 2.2, "sine", 0.22, 34); noiseBurst(1.8, 0.14, 150, 60); },
