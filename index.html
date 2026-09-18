@@ -358,9 +358,13 @@ let W = 0, H = 0, dpr = 1;
 let bdCur = null, bdPrev = null, bdFade = 1;   // 時間帯が変わるとき、前の空とクロスフェードする
 
 function resize(){
+  const w = cv.clientWidth, h = cv.clientHeight;
+  // 画面が切り替わる途中などで 0 が返ることがある。そのまま進むと幅0の背景を
+  // 作ってしまい、次の描画で例外になる。取れないときは前の大きさで続ける。
+  if(w < 2 || h < 2) return;
   dpr = Math.min(window.devicePixelRatio || 1, 2);
-  W = cv.clientWidth;
-  H = cv.clientHeight;
+  W = w;
+  H = h;
   cv.width  = Math.round(W * dpr);
   cv.height = Math.round(H * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -448,13 +452,16 @@ cv.addEventListener("pointerdown", e => { e.preventDefault(); pointTo(e.clientX)
    ========================================================== */
 function loop(now){
   if(!state.running) return;
+  // 次のコマを先に予約しておく。描画が一度でも失敗したとき、ここが最後にあると
+  // 二度と呼ばれずゲームが固まる。スマホの画面回転やアドレスバーの開閉で起きる。
+  requestAnimationFrame(loop);
+
   const dt = Math.min((now - state.lastTime) / 1000, 0.05);
   state.lastTime = now;
 
   update(dt, now);
   if(!state.running) return;
   draw();
-  requestAnimationFrame(loop);
 }
 
 /* ==========================================================
@@ -2454,7 +2461,8 @@ function drawGround(name){
 function setBackdrop(i, instant){
   bdPrev = instant ? null : bdCur;
   const c = document.createElement("canvas");
-  c.width = Math.round(W * dpr); c.height = Math.round(H * dpr);
+  c.width  = Math.max(1, Math.round(W * dpr));
+  c.height = Math.max(1, Math.round(H * dpr));
   const g = c.getContext("2d");
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   SCENES[i].paint(g);
@@ -2464,7 +2472,8 @@ function setBackdrop(i, instant){
 
 /* 時間帯が変わる3秒間だけ、前の空の上に新しい空を重ねていく */
 function paintBackdrop(){
-  if(bdPrev && bdFade < 1){
+  if(!bdCur || !bdCur.width || !bdCur.height) return;
+  if(bdPrev && bdPrev.width && bdPrev.height && bdFade < 1){
     ctx.drawImage(bdPrev, 0, 0, W, H);
     ctx.globalAlpha = ease(bdFade);
     ctx.drawImage(bdCur, 0, 0, W, H);
