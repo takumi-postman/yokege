@@ -3095,6 +3095,27 @@ function drawTitle(){
 
 }
 
+/* 開始画面でも景色だけは流しておく。止まった絵だと、ここが遊ぶ場所だと
+   分かりにくい。場面は進めないので、夕暮れの砂漠のまま。目印（ピラミッド等）は
+   update() の中でしか出さないので、ここには出てこない。 */
+let titleRaf = 0, titleLast = 0;
+
+function titleLoop(now){
+  if(state.running || startView.hidden){ titleRaf = 0; return; }
+  titleRaf = requestAnimationFrame(titleLoop);       // 先に次を予約しておく
+  const dt = Math.min((now - titleLast) / 1000, 0.05);
+  titleLast = now;
+  state.travel += dt * CONFIG.travelSpeed;
+  updateProps(dt);
+  drawTitle();
+}
+
+function startTitleMotion(){
+  if(titleRaf) return;                               // 二重に回さない
+  titleLast = performance.now();
+  titleRaf = requestAnimationFrame(titleLoop);
+}
+
 function legend(x, y, kind, label){
   const cw = (kind === "red" || kind === "green") ? 34 : 24;
   if(kind === "red" || kind === "green"){
@@ -3223,6 +3244,7 @@ function showStart(){
   seedProps();
   setBackdrop(0, true);
   hideVeils();
+  startTitleMotion();
   startBest.textContent = "";
   if(best > 0){
     startBest.append(document.createTextNode("自己ベスト " + toTimecode(best) + "　"));
