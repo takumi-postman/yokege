@@ -102,13 +102,14 @@
   .veil__best b{color:var(--cyan); font-weight:700; font-family:var(--sans)}
   .veil__rank{margin:0; font-size:13px; color:var(--ink-2); min-height:1.6em}
   .veil__rank b{color:var(--ink); font-size:16px; font-weight:800}
-  .veil__msg{margin:0; font-size:11px; color:var(--ink-3); font-family:var(--mono); min-height:1.4em}
-  .veil__acts{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:2px}
+  .veil__msg{margin:0; font-size:12px; color:var(--ink-2); font-family:var(--mono); min-height:1.3em; line-height:1.3}
+  .veil__acts{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:0}
   .veil__head{display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center}
+  .veil__head .k{font-size:14px; font-weight:800; color:var(--ink); letter-spacing:.04em}
   .veil__head input{
-    font-family:var(--sans); font-size:13px; color:var(--ink);
+    font-family:var(--sans); font-size:14px; font-weight:700; color:var(--ink);
     background:var(--sunk); border:1px solid var(--line); border-radius:3px;
-    padding:5px 9px; width:8em; text-align:center;
+    padding:6px 10px; width:8.5em; text-align:center;
   }
   .veil__head input:focus-visible{outline:2px solid var(--cyan); outline-offset:1px}
 
@@ -155,35 +156,37 @@
   .act--side{font-size:14px; font-weight:700; padding:12px 22px}
   .act--big{font-size:16px; font-weight:800; padding:12px 34px}
 
-  .veil--rank{justify-content:flex-start; gap:8px}
+  /* 順位表。目標を見に来る画面なので、暗くて小さいままでは用を成さない。
+     下の景色は完全に隠して、行そのものを大きくしてある。 */
+  .veil--rank{justify-content:flex-start; gap:6px; background:rgba(11,14,19,.975); padding:8px}
   .rank__list{
-    list-style:none; margin:0; padding:0; width:100%; max-width:330px;
-    display:grid; gap:1px; background:#262c36; border-radius:3px;
+    list-style:none; margin:0; padding:0; width:100%; max-width:470px;
+    display:grid; gap:1px; background:#2c333f; border-radius:3px;
     overflow-y:auto; overflow-x:hidden; flex:1; min-height:0;
   }
   .rank__list li{
-    display:grid; grid-template-columns:2.4em 1fr auto; align-items:center; gap:8px;
-    background:var(--sunk); padding:6px 10px; font-size:13px; text-align:left;
+    display:grid; grid-template-columns:2.7em 1fr auto; align-items:center; gap:10px;
+    background:#191d24; padding:7px 12px; font-size:15px; line-height:1.3; text-align:left;
   }
   .rank__list .who small{
-    display:block; font-size:10.5px; line-height:1.35; color:var(--ink-3);
+    display:block; font-size:12px; line-height:1.25; color:var(--ink-2);
   }
-  .rank__list li.me{background:#1d2a2b}
-  .rank__list li.gap{justify-items:center; grid-template-columns:1fr; color:var(--ink-3)}
+  .rank__list li.me{background:#1f3436; box-shadow:inset 3px 0 0 var(--cyan)}
+  .rank__list li.gap{justify-items:center; grid-template-columns:1fr; color:var(--ink-2)}
   .rank__list .rank{
-    font-family:var(--mono); font-size:11px; font-weight:700; color:var(--ink-3);
+    font-family:var(--mono); font-size:13px; font-weight:700; color:var(--ink-2);
     font-variant-numeric:tabular-nums;
   }
   .rank__list li:nth-child(1) .rank{color:var(--amber)}
   .rank__list .who{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .rank__list .grade{
-    font-family:var(--mono); font-weight:700; font-size:12px; margin-right:7px;
-    color:var(--ink-3);
+    font-family:var(--mono); font-weight:700; font-size:14px; margin-right:8px;
+    color:var(--ink-2);
   }
   .rank__list .grade.s{color:var(--amber)}
   .rank__list .grade.a{color:var(--cyan)}
   .rank__list .grade.b{color:var(--green)}
-  .rank__list .tc{font-family:var(--mono); font-size:12px; font-variant-numeric:tabular-nums}
+  .rank__list .tc{font-family:var(--mono); font-size:14px; font-weight:700; font-variant-numeric:tabular-nums}
 
   .lab{
     display:flex; align-items:center; gap:16px; flex-wrap:wrap;
@@ -3596,7 +3599,8 @@ function loadTakenNames(){
   function done(){ clearTimeout(timer); delete window[cb]; tag.remove(); }
   window[cb] = data => { done(); noteNames(data); };
   tag.onerror = done;                 // 取れなくても黙って諦める。始めるのを邪魔しない。
-  tag.src = LEADERBOARD.endpoint + "?callback=" + cb + "&top=50&_=" + Date.now();
+  tag.src = LEADERBOARD.endpoint + "?callback=" + cb + "&top=50&id=" +
+            encodeURIComponent(myId) + "&_=" + Date.now();
   document.body.appendChild(tag);
 }
 
@@ -3658,7 +3662,7 @@ function submitScore(sec){
     method:  "POST",
     mode:    "no-cors",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body:    JSON.stringify({ name: sending, sec: Math.round(sec * 100) / 100,
+    body:    JSON.stringify({ id: myId, name: sending, sec: Math.round(sec * 100) / 100,
                               lives: state.lives, cleared: state.cleared ? 1 : 0 }),
   }).then(() => setTimeout(loadBoard, 1500))
     .catch(() => { overRank.textContent = "記録を送れませんでした"; });
@@ -3682,6 +3686,7 @@ function loadBoard(){
   tag.onerror = () => { done(); fail(); };
   tag.src = LEADERBOARD.endpoint + "?callback=" + cb +
             "&top="  + LEADERBOARD.top +
+            "&id="   + encodeURIComponent(myId) +
             "&name=" + encodeURIComponent(myName()) +
             "&_="    + Date.now();
   document.body.appendChild(tag);
@@ -3814,6 +3819,17 @@ function freshName(){
   const w = NAME_WORDS[Math.floor(Math.random() * NAME_WORDS.length)];
   return w + (1000 + Math.floor(Math.random() * 9000));   // 約14万通り
 }
+
+/* 端末ごとの見えない名札。名前を変えても記録が分かれないよう、
+   順位表はこちらで人を数える。名前は見せるためだけのもの。 */
+let myId = "";
+try {
+  myId = localStorage.getItem("dodgeId") || "";
+  if(!myId){
+    myId = "u" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    localStorage.setItem("dodgeId", myId);
+  }
+} catch(err){ myId = "u" + Math.random().toString(36).slice(2, 12); }
 
 let savedName = "";
 try {
