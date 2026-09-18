@@ -128,6 +128,11 @@
     padding:5px 9px; width:9em; text-align:center;
   }
   .namebox input:focus-visible{outline:2px solid var(--cyan); outline-offset:1px}
+  .namebox.clash input{border-color:#ff6b5e}
+  .namewarn{
+    margin:-5px 0 8px; font-size:11.5px; color:#ff8076;
+    text-shadow:0 1px 4px rgba(0,0,0,.9); pointer-events:none;
+  }
 
   .act{
     font-family:var(--sans); font-size:13px; font-weight:700;
@@ -210,6 +215,7 @@
         <span class="k">順位表のなまえ</span>
         <input id="startName" maxlength="12" placeholder="なまえ" aria-label="順位表に出るなまえ">
       </label>
+      <p class="namewarn" id="nameWarn" hidden>その名前は使われています。記録がまとめられます</p>
       <button type="button" class="act act--primary act--big" id="actStart">ゲームスタート</button>
     </div>
 
@@ -3085,7 +3091,8 @@ function drawTitle(){
   drawGround(SCENES[state.phase].ground);
   drawPlayer(W / 2);
 
-  const y1 = H / 2 - 52, y2 = H / 2 - 18;
+  // 画面の下半分は、なまえ欄やボタンが重なる場所。凡例はそこへ降りてこない高さに置く。
+  const y1 = H * 0.25, y2 = H * 0.355;
   legend(W / 2 - 120, y1, "red",      "よける");
   legend(W / 2 -  22, y1, "green",    "減速");
   legend(W / 2 +  64, y1, "pot",      "ヘビ");
@@ -3245,6 +3252,7 @@ function showStart(){
   setBackdrop(0, true);
   hideVeils();
   startTitleMotion();
+  loadTakenNames();
   startBest.textContent = "";
   if(best > 0){
     startBest.append(document.createTextNode("自己ベスト " + toTimecode(best) + "　"));
@@ -3464,6 +3472,45 @@ function myName(){
   return fresh;
 }
 
+/* 順位表に載っている名前を控えておく。同じ名前で出すと記録がひとつに
+   合算されてしまうので、入れた時点で気づけるようにする。始めるのは止めない。 */
+let takenNames = null;
+
+function myRecordedName(){            // この端末が実際に記録を残したときの名前
+  try { return localStorage.getItem("dodgeMine") || ""; } catch(err){ return ""; }
+}
+
+function checkName(){
+  const box  = document.getElementById("nameBox");
+  const warn = document.getElementById("nameWarn");
+  if(!box || !warn) return;
+  const v = (nameEls[0].value || "").trim();
+  const clash = !!(takenNames && v && v !== myRecordedName() && takenNames.has(v));
+  warn.hidden = !clash;
+  box.classList.toggle("clash", clash);
+}
+
+function noteNames(data){
+  const rows = (data && data.list) || [];
+  if(rows.length || (data && data.players === 0)){
+    takenNames = new Set(rows.map(r => String(r.name)));
+    checkName();
+  }
+}
+
+/* 開始画面に戻るたび、いま載っている名前を取り直す。 */
+function loadTakenNames(){
+  if(!LEADERBOARD.endpoint) return;
+  const cb  = "nmcb" + (++jsonpSeq);
+  const tag = document.createElement("script");
+  const timer = setTimeout(done, 9000);
+  function done(){ clearTimeout(timer); delete window[cb]; tag.remove(); }
+  window[cb] = data => { done(); noteNames(data); };
+  tag.onerror = done;                 // 取れなくても黙って諦める。始めるのを邪魔しない。
+  tag.src = LEADERBOARD.endpoint + "?callback=" + cb + "&top=50&_=" + Date.now();
+  document.body.appendChild(tag);
+}
+
 function setName(v){
   v = (v || "").trim().slice(0, 12);
   if(!v) v = freshName();
@@ -3516,11 +3563,13 @@ function submitScore(sec){
     overRank.textContent = "記録は" + LEADERBOARD.minSec + "秒から登録されます";
     return;
   }
+  const sending = myName();
+  try { localStorage.setItem("dodgeMine", sending); } catch(err){}   // 次からは自分の名前だと分かる
   fetch(LEADERBOARD.endpoint, {
     method:  "POST",
     mode:    "no-cors",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body:    JSON.stringify({ name: myName(), sec: Math.round(sec * 100) / 100,
+    body:    JSON.stringify({ name: sending, sec: Math.round(sec * 100) / 100,
                               lives: state.lives, cleared: state.cleared ? 1 : 0 }),
   }).then(() => setTimeout(loadBoard, 1500))
     .catch(() => { overRank.textContent = "記録を送れませんでした"; });
@@ -3540,7 +3589,7 @@ function loadBoard(){
     rankNote.textContent = "読み込めませんでした。通信を確認して、もう一度開いてください。";
   }
 
-  window[cb] = data => { done(); lastBoard = data; renderRank(data); };
+  window[cb] = data => { done(); lastBoard = data; noteNames(data); renderRank(data); };
   tag.onerror = () => { done(); fail(); };
   tag.src = LEADERBOARD.endpoint + "?callback=" + cb +
             "&top="  + LEADERBOARD.top +
@@ -3673,9 +3722,10 @@ nameEls.forEach(el => {
   // 打っているあいだは、もう片方の欄にもそのまま写す
   el.addEventListener("input", () => {
     nameEls.forEach(other => { if(other !== el) other.value = el.value; });
+    checkName();
   });
   // 手を離したとき、空なら別の名前を割り当てて保存する
-  el.addEventListener("change", () => setName(el.value));
+  el.addEventListener("change", () => { setName(el.value); checkName(); });
 });
 
 // 順位表の行き先が無いときは、ランキングのボタンごと出さない
