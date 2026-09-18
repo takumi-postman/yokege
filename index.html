@@ -2331,13 +2331,10 @@ function spawnProp(){
              torch: q > 0.80, spread: 0.85 + Math.random() * 0.35 };
   }
   const r = Math.random();
-  const x0 = Math.random() * 1.8 - 0.4;      // 画面の外側にもはみ出す
   const o = {
     z: 0,                                    // 0=地平線  1=足元
-    x: x0,
-    x0: x0,                                  // 逸れる前のもとの位置
-    side: x0 >= 0.5 ? 1 : -1,                // どちら側へ流れて抜けるか
-    exit: 1.70,                              // 画面の外へ出きるまで消さない
+    x: Math.random() * 1.8 - 0.4,            // 画面の外側にもはみ出す
+    exit: 1.55,                              // 足元を通り過ぎて、枠の下へ出きるまで消さない
     big: 1,
   };
   if(r < 0.13){
@@ -2384,13 +2381,9 @@ function updateProps(step){
   for(let i = state.props.length - 1; i >= 0; i--){
     const o = state.props[i];
     o.z += step * CONFIG.travelSpeed * (o.slow || 1) * (o.rush || 1);
-    // 近づくにつれて中央から横へ逸れていく。真正面のまま消えると驚くので。
-    if(o.dir){
-      o.x = 0.5 + o.dir * 0.30 * o.z * o.z;            // 目印（ピラミッド等）
-    } else if(o.side && o.z > 0.72){
-      const k = (o.z - 0.72) / 0.55;                   // 0→1
-      o.x = o.x0 + o.side * 0.46 * k * k;              // 手前ほど強く脇へ流す
-    }
+    // 目印だけは横へ逸らす。近づくと画面を覆ってしまうほど大きいため。
+    // ふつうの木や岩や池は、そのまま手前まで来て、足元を通り抜けていく。
+    if(o.dir) o.x = 0.5 + o.dir * 0.30 * o.z * o.z;
     if(o.z > (o.exit || 1.08)) state.props.splice(i, 1);
   }
   state.propTimer -= step * CONFIG.travelSpeed;
@@ -2427,12 +2420,13 @@ function drawProps(P){
     const p  = Math.max(0, Math.min(ex, o.z));
     const y  = top + span * p * p;
     const sc = (0.08 + p * 1.9) * (o.big || 1);
-    // 消える所でちょうど透明になりきるように、薄くなる速さを退場位置に合わせる。
-    // ここが合っていないと、まだ見えているのに唐突に消える。
-    const fade = p > 1 ? Math.max(0, 1 - (p - 1) / Math.max(0.35, ex - 1)) : 1;
+    // 目印は近づくと画面を覆うので、逸れながら薄れて退場する。
+    // ふつうの木や岩はそのままの濃さで足元を通り抜けるので、薄くしない。
+    const fade = (o.dir && p > 1) ? Math.max(0, 1 - (p - 1) / Math.max(0.35, ex - 1)) : 1;
     if(fade <= 0) continue;
     const x  = W / 2 + (o.x - 0.5) * W * (0.20 + p * 2.4);
-    if(x < -W * 0.7 || x > W * 1.7) continue;        // 枠の外へ出きったものは描かない
+    // いちばん背の高いヤシでも天辺が枠の下なら、もう見えていない
+    if(x < -W * 0.8 || x > W * 1.8 || y - H * 0.16 * sc > H) continue;
     ctx.save();
     ctx.globalAlpha = fade;
     const col = depthColor(P.veg, p);                // 手前ほど暗く、段差なく
