@@ -112,6 +112,23 @@
   }
   .veil__head input:focus-visible{outline:2px solid var(--cyan); outline-offset:1px}
 
+  /* 開始画面のなまえ欄。順位表に出る名前をここで決められる。
+     遊び終わるまで変えられないと、1回目だけ知らない名前で載ってしまう。 */
+  .namebox{
+    display:flex; align-items:center; gap:8px; margin-bottom:9px;
+    pointer-events:auto;                       /* 開始画面は素通しなので、ここだけ戻す */
+  }
+  .namebox .k{
+    font-family:var(--mono); font-size:10.5px; color:var(--ink-2);
+    letter-spacing:.06em; text-shadow:0 1px 4px rgba(0,0,0,.9);
+  }
+  .namebox input{
+    font-family:var(--sans); font-size:13px; color:var(--ink);
+    background:var(--sunk); border:1px solid var(--line); border-radius:3px;
+    padding:5px 9px; width:9em; text-align:center;
+  }
+  .namebox input:focus-visible{outline:2px solid var(--cyan); outline-offset:1px}
+
   .act{
     font-family:var(--sans); font-size:13px; font-weight:700;
     color:var(--ink); background:var(--panel);
@@ -189,6 +206,10 @@
 
     <div class="veil veil--start" id="startView" hidden>
       <p class="veil__best" id="startBest"></p>
+      <label class="namebox" id="nameBox">
+        <span class="k">順位表のなまえ</span>
+        <input id="startName" maxlength="12" placeholder="なまえ" aria-label="順位表に出るなまえ">
+      </label>
       <button type="button" class="act act--primary act--big" id="actStart">ゲームスタート</button>
     </div>
 
@@ -3409,9 +3430,24 @@ const nameEl   = document.getElementById("playerName");
 
 let lastBoard = null;                    // 直近に受け取った順位表
 
+/* なまえ。開始画面とランキング画面の両方に欄があるので、
+   どちらで書き換えても同じ1つの値を見るようにしてある。 */
+const nameEls = [nameEl, document.getElementById("startName")].filter(Boolean);
+
 function myName(){
-  const v = (nameEl.value || "").trim();
-  return v || "ななし";
+  const v = nameEls.map(el => (el.value || "").trim()).find(x => x);
+  if(v) return v.slice(0, 12);
+  const fresh = freshName();          // 空のまま始めた人には、その場で割り当てる
+  setName(fresh);
+  return fresh;
+}
+
+function setName(v){
+  v = (v || "").trim().slice(0, 12);
+  if(!v) v = freshName();
+  nameEls.forEach(el => { el.value = v; });
+  try { localStorage.setItem("dodgeName", v); } catch(err){}
+  return v;
 }
 
 const RANKS = [
@@ -3609,17 +3645,22 @@ try {
   savedName = localStorage.getItem("dodgeName") || "";
   if(!savedName){ savedName = freshName(); localStorage.setItem("dodgeName", savedName); }
 } catch(err){ savedName = freshName(); }
-nameEl.value = savedName;
+nameEls.forEach(el => { el.value = savedName; });
 
-nameEl.addEventListener("change", () => {
-  let v = nameEl.value.trim();
-  if(!v) v = freshName();              // 空にされたら、また別の名前を割り当てる
-  nameEl.value = v;
-  try { localStorage.setItem("dodgeName", v); } catch(err){}
+nameEls.forEach(el => {
+  // 打っているあいだは、もう片方の欄にもそのまま写す
+  el.addEventListener("input", () => {
+    nameEls.forEach(other => { if(other !== el) other.value = el.value; });
+  });
+  // 手を離したとき、空なら別の名前を割り当てて保存する
+  el.addEventListener("change", () => setName(el.value));
 });
 
 // 順位表の行き先が無いときは、ランキングのボタンごと出さない
-if(!LEADERBOARD.endpoint) document.getElementById("actRank").hidden = true;
+if(!LEADERBOARD.endpoint){
+  document.getElementById("actRank").hidden = true;
+  document.getElementById("nameBox").hidden = true;   // 送り先が無いなら名前も要らない
+}
 
 /* 撮影用。URL に ?rec を付けると、狙った場面が15秒後に来るように時間を詰める。
    ひとつ手前の場面から始まるので、切り替わる瞬間をそのまま撮れる。
