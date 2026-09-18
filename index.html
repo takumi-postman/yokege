@@ -150,6 +150,9 @@
     pointer-events:none;             /* キャンバスの操作を邪魔しない */
   }
   .veil--start .act{pointer-events:auto}
+  .startacts{margin-top:0}
+  /* 上下の余白はスタートと合わせる。高さが揃っていないと並びが崩れて見える。 */
+  .act--side{font-size:14px; font-weight:700; padding:12px 22px}
   .act--big{font-size:16px; font-weight:800; padding:12px 34px}
 
   .veil--rank{justify-content:flex-start; gap:8px}
@@ -214,7 +217,10 @@
         <span class="k" id="nameLabel">順位表のなまえ</span>
         <input id="startName" maxlength="12" placeholder="なまえ" aria-label="順位表に出るなまえ">
       </label>
-      <button type="button" class="act act--primary act--big" id="actStart">ゲームスタート</button>
+      <div class="veil__acts startacts">
+        <button type="button" class="act act--primary act--big" id="actStart">ゲームスタート</button>
+        <button type="button" class="act act--side" id="actStartRank">ランキング</button>
+      </div>
     </div>
 
     <div class="veil" id="overView" hidden>
@@ -3472,6 +3478,15 @@ const LEADERBOARD = {
   minSec: 5,      // これ未満は送らない（誤操作を弾く）
 };
 
+/* 手元で開いているときは、公開の順位表には一切触らない。
+   直しながら何度も遊ぶことになるので、その走りが視聴者の表に混ざると困る。
+   github.io で開いたときだけ本物につながる。 */
+if(location.protocol === "file:" ||
+   /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(location.hostname)){
+  LEADERBOARD.endpoint = "";
+  LEADERBOARD.testing  = true;
+}
+
 const startView = document.getElementById("startView");
 /* 称号。生き延びた秒数で決まる。区切りは時間帯の変わり目（35秒ごと）と同じにしてあるので、
    「どこまで見たか」がそのまま称号になる。280秒＝砂漠の一日を一周。 */
@@ -3748,14 +3763,29 @@ async function copyResult(){
 document.getElementById("actRetry").addEventListener("click", showStart);
 document.getElementById("actStart").addEventListener("click", start);
 document.getElementById("actCopy").addEventListener("click", copyResult);
-document.getElementById("actRank").addEventListener("click", () => {
-  overView.hidden = true;
+/* 順位表は、始める前にも終わったあとにも開く。
+   どちらから来たかを覚えておかないと、「もどる」の行き先が変わってしまう。 */
+let rankFrom = "over";
+
+function openRank(from){
+  rankFrom = from;
+  hideVeils();
   rankView.hidden = false;
-  if(!lastBoard){ rankNote.textContent = "読み込み中…"; loadBoard(); }
-});
+  if(!lastBoard) rankNote.textContent = "読み込み中…";
+  loadBoard();                       // 目標を見に来ているので、開くたび取り直す
+}
+
+document.getElementById("actRank").addEventListener("click", () => openRank("over"));
+document.getElementById("actStartRank").addEventListener("click", () => openRank("start"));
+
 document.getElementById("rankBack").addEventListener("click", () => {
   rankView.hidden = true;
-  overView.hidden = false;
+  if(rankFrom === "start"){
+    startView.hidden = false;
+    startTitleMotion();              // 止めてあった景色をまた流す
+  } else {
+    overView.hidden = false;
+  }
 });
 
 /* 初めて開いた人に、かぶりにくい名前を最初から割り当てておく。
@@ -3787,6 +3817,7 @@ nameEls.forEach(el => {
 // 順位表の行き先が無いときは、ランキングのボタンごと出さない
 if(!LEADERBOARD.endpoint){
   document.getElementById("actRank").hidden = true;
+  document.getElementById("actStartRank").hidden = true;
   document.getElementById("nameBox").hidden = true;   // 送り先が無いなら名前も要らない
 }
 
