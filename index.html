@@ -296,14 +296,18 @@ const CONFIG = {
 
   // --- アイテムの出現率。全部足して 0.335、残りが赤 ---
   // 倍速をやめたぶん（0.050）は緑・壺・ダイヤに配り直した。赤の割合は変えていない。
-  greenChance:    0.140,
+  greenChance:    0.140,   // 入口での出る割合
+  greenChanceLate:0.215,   // 終盤での出る割合
   potChance:      0.065,
   gemChance:      0.055,
   scarabChance:   0.040,
   scissorsChance: 0.035,
 
   // --- 緑（取ると減速する） ---
-  greenWidth:    30,
+  // 後半は仕掛けが増えるぶん、減速そのものを取りやすくする。
+  // 横幅も出る割合も、砂漠の入口から王墓へ向かって少しずつ寄っていく。
+  greenWidth:     30,   // 砂漠の入口での横幅
+  greenWidthLate: 58,   // 王墓に着くころの横幅（再生ヘッドより少し広い）
   slowAmount:    0.20,  // 1個取るごとに何割ゆっくりになるか
   slowFloor:     0.35,  // これ以上は遅くならない下限（緑を重ねたときの最スロー）
   slowRecover:   0.05,  // 1秒あたり何割ずつ元に戻るか（小さいほど減速が長持ち）
@@ -1685,17 +1689,31 @@ function drawRock(b){
 /* 上から順にスロットを見て、当たったものを出す。
    解禁時間が来ていないスロットは、そのぶん赤になる。 */
 const ITEMS = [
-  { kind:"green",    after:  3, chance:"greenChance"    },
+  { kind:"green",    after:  3, chance:"greenChance",    late:"greenChanceLate" },
   { kind:"pot",      after:  6, chance:"potChance"      },
   { kind:"gem",      after: 10, chance:"gemChance"      },
   { kind:"scarab",   after: 14, chance:"scarabChance"   },
   { kind:"scissors", after: 18, chance:"scissorsChance" },
 ];
 
+/* 旅のどのあたりにいるか。0 が砂漠の入口、1 が王墓の前。
+   巻き戻る難易度の時計ではなく実時間で見る。景色の進み方と合わせるため。 */
+function journey(){
+  return Math.min(1, Math.max(0, state.elapsed / BOSS_DEF.pharaoh.at));
+}
+
+/* 減速の横幅。終盤ほど広い。 */
+function greenWidth(){
+  return CONFIG.greenWidth + (CONFIG.greenWidthLate - CONFIG.greenWidth) * journey();
+}
+
 function pickKind(elapsed, boost){
+  const j = journey();
   let r = Math.random();
   for(const it of ITEMS){
-    const c = CONFIG[it.chance] * boost;
+    let c = CONFIG[it.chance];
+    if(it.late) c += (CONFIG[it.late] - c) * j;   // 終盤へ向けて少しずつ寄せる
+    c *= boost;
     if(r < c) return elapsed > it.after ? it.kind : "red";
     r -= c;
   }
@@ -1706,7 +1724,7 @@ function sizeOf(kind, wide){
   if(wide)                  return [Math.min(W * 0.5, 150 + Math.random() * 110), 14];
   if(kind === "pot")        return [CONFIG.potWidth,    CONFIG.potHeight];
   if(kind === "gem")        return [CONFIG.gemWidth,    CONFIG.gemHeight];
-  if(kind === "green")      return [CONFIG.greenWidth,  14];
+  if(kind === "green")      return [greenWidth(),       14];
   if(kind === "scissors")   return [CONFIG.scissorsSize, CONFIG.scissorsSize];
   if(kind === "scarab")     return [CONFIG.scarabWidth, CONFIG.scarabHeight];
   return [CONFIG.blockMinWidth + Math.random() * (CONFIG.blockMaxWidth - CONFIG.blockMinWidth), 14];
@@ -1796,7 +1814,7 @@ function shieldHits(b){
    詰まっているときは動けないので、落ちながらこちらへ寄ってくる。
    盤面を片づけるだけでは速さが変わらず、結局また同じ状況に戻ってしまうため。 */
 function dropRelief(x, y){
-  const w = CONFIG.greenWidth;
+  const w = greenWidth();
   state.blocks.push({
     x: Math.max(0, Math.min(W - w, x - w / 2)),
     y: y,
