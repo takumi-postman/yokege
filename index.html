@@ -119,20 +119,19 @@
     pointer-events:auto;                       /* 開始画面は素通しなので、ここだけ戻す */
   }
   .namebox .k{
-    font-family:var(--mono); font-size:10.5px; color:var(--ink-2);
-    letter-spacing:.06em; text-shadow:0 1px 4px rgba(0,0,0,.9);
+    font-family:var(--sans); font-size:13px; font-weight:700; color:var(--ink);
+    text-shadow:0 1px 5px rgba(0,0,0,1), 0 0 10px rgba(0,0,0,.8);
   }
   .namebox input{
-    font-family:var(--sans); font-size:13px; color:var(--ink);
-    background:var(--sunk); border:1px solid var(--line); border-radius:3px;
-    padding:5px 9px; width:9em; text-align:center;
+    font-family:var(--sans); font-size:15px; font-weight:700; color:var(--ink);
+    background:rgba(10,13,18,.92); border:1px solid var(--line); border-radius:3px;
+    padding:7px 10px; width:9.5em; text-align:center;
   }
   .namebox input:focus-visible{outline:2px solid var(--cyan); outline-offset:1px}
+  /* 使われている名前を入れたときは、ラベルの場所をそのまま警告に使う。
+     行を増やすと、そのぶん下から押し上げられて凡例に被さるため。 */
   .namebox.clash input{border-color:#ff6b5e}
-  .namewarn{
-    margin:-5px 0 8px; font-size:11.5px; color:#ff8076;
-    text-shadow:0 1px 4px rgba(0,0,0,.9); pointer-events:none;
-  }
+  .namebox.clash .k{color:#ff8a7e}
 
   .act{
     font-family:var(--sans); font-size:13px; font-weight:700;
@@ -151,7 +150,7 @@
     pointer-events:none;             /* キャンバスの操作を邪魔しない */
   }
   .veil--start .act{pointer-events:auto}
-  .act--big{font-size:15px; padding:11px 30px}
+  .act--big{font-size:16px; font-weight:800; padding:12px 34px}
 
   .veil--rank{justify-content:flex-start; gap:8px}
   .rank__list{
@@ -212,10 +211,9 @@
     <div class="veil veil--start" id="startView" hidden>
       <p class="veil__best" id="startBest"></p>
       <label class="namebox" id="nameBox">
-        <span class="k">順位表のなまえ</span>
+        <span class="k" id="nameLabel">順位表のなまえ</span>
         <input id="startName" maxlength="12" placeholder="なまえ" aria-label="順位表に出るなまえ">
       </label>
-      <p class="namewarn" id="nameWarn" hidden>その名前は使われています。記録がまとめられます</p>
       <button type="button" class="act act--primary act--big" id="actStart">ゲームスタート</button>
     </div>
 
@@ -3091,15 +3089,70 @@ function drawTitle(){
   drawGround(SCENES[state.phase].ground);
   drawPlayer(W / 2);
 
-  // 画面の下半分は、なまえ欄やボタンが重なる場所。凡例はそこへ降りてこない高さに置く。
-  const y1 = H * 0.25, y2 = H * 0.355;
-  legend(W / 2 - 120, y1, "red",      "よける");
-  legend(W / 2 -  22, y1, "green",    "減速");
-  legend(W / 2 +  64, y1, "pot",      "ヘビ");
-  legend(W / 2 - 134, y2, "gem",      "シールド");
-  legend(W / 2 -  34, y2, "scarab",   "押し返す");
-  legend(W / 2 +  66, y2, "scissors", "カット");
+  // 景色が流れるようになったので、文字が乗る側は沈めておく。
+  // 何が通りかかっても読めるようにするため。上から下へ抜いていく。
+  const wash = ctx.createLinearGradient(0, 0, 0, H * 0.66);
+  wash.addColorStop(0,    "rgba(7,9,13,.78)");
+  wash.addColorStop(0.70, "rgba(7,9,13,.56)");
+  wash.addColorStop(1,    "rgba(7,9,13,0)");
+  ctx.fillStyle = wash;
+  ctx.fillRect(0, 0, W, H * 0.66);
 
+  ctx.textAlign = "center";
+
+  // 題字。URLを開いていちばん先に目に入るもの。
+  const t = Math.round(Math.min(W * 0.155, H * 0.20));
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,.9)"; ctx.shadowBlur = 20; ctx.shadowOffsetY = 3;
+  ctx.fillStyle = "#fff5e6";
+  ctx.font = '800 ' + t + 'px "M PLUS 1p", sans-serif';
+  ctx.fillText("よけゲー", W / 2, H * 0.200);
+  ctx.restore();
+
+  // 題字と説明のあいだの線。飾りではなく、ここから下は別の話だという区切り。
+  ctx.fillStyle = "rgba(240,180,41,.9)";
+  ctx.fillRect(Math.round(W / 2 - t * 0.85), Math.round(H * 0.245), Math.round(t * 1.7), 2);
+
+  // 自己ベストがあればそれを、無ければ何のゲームかを出す。
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,.85)"; ctx.shadowBlur = 8;
+  const info = Math.round(Math.min(W * 0.042, 17));
+  if(best > 0){
+    ctx.font = '500 ' + info + 'px "M PLUS 1p", sans-serif';
+    const lead = "自己ベスト ";
+    const tc   = toTimecode(best);
+    const lw = ctx.measureText(lead).width;
+    ctx.font = '700 ' + info + 'px "JetBrains Mono", monospace';
+    const tw = ctx.measureText(tc).width;
+    let x = W / 2 - (lw + tw) / 2;
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(232,235,241,.85)";
+    ctx.font = '500 ' + info + 'px "M PLUS 1p", sans-serif';
+    ctx.fillText(lead, x, H * 0.320);
+    ctx.fillStyle = COLOR.cyan;
+    ctx.font = '700 ' + info + 'px "JetBrains Mono", monospace';
+    ctx.fillText(tc, x + lw, H * 0.320);
+    ctx.textAlign = "center";
+  } else {
+    ctx.fillStyle = "rgba(232,235,241,.88)";
+    ctx.font = '500 ' + info + 'px "M PLUS 1p", sans-serif';
+    ctx.fillText("落ちてくる赤をよけて、砂漠の先へ", W / 2, H * 0.320);
+  }
+  ctx.restore();
+
+  // 何が助けてくれるか。3つずつ2段。画面幅に合わせて広がる。
+  const s    = Math.min(W * 0.070, 30);
+  const span = Math.min(W * 0.96, 470);
+  const step = span / 3;
+  const x0   = W / 2 - span / 2 + step / 2;
+  const rows = [
+    [["red", "よける"], ["green", "減速"], ["pot", "ヘビ"]],
+    [["gem", "シールド"], ["scarab", "押し返す"], ["scissors", "カット"]],
+  ];
+  rows.forEach((row, r) => {
+    const y = H * (r ? 0.520 : 0.420);
+    row.forEach(([kind, label], i) => legend(x0 + step * i, y, kind, label, s));
+  });
 }
 
 /* 開始画面でも景色だけは流しておく。止まった絵だと、ここが遊ぶ場所だと
@@ -3123,24 +3176,34 @@ function startTitleMotion(){
   titleRaf = requestAnimationFrame(titleLoop);
 }
 
-function legend(x, y, kind, label){
-  const cw = (kind === "red" || kind === "green") ? 34 : 24;
+/* 凡例のひとつ。絵と文字をひと組にして、渡された中心に置く。
+   幅の違う端末でも、3つが等間隔で並ぶようにするため。 */
+function legend(cx, y, kind, label, s){
+  const font = Math.round(s * 0.60);
+  ctx.font = '700 ' + font + 'px "M PLUS 1p", sans-serif';
+  const lw  = ctx.measureText(label).width;
+  const iw  = (kind === "red" || kind === "green") ? s * 1.45 : s * 1.00;
+  const gap = s * 0.30;
+  const x   = cx - (iw + gap + lw) / 2;
+
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,.75)"; ctx.shadowBlur = 6;
   if(kind === "red" || kind === "green"){
     ctx.fillStyle = kind === "green" ? COLOR.green : COLOR.red;
-    ctx.fillRect(x, y, cw, 14);
+    ctx.fillRect(x, y - s * 0.28, iw, s * 0.56);
     ctx.fillStyle = kind === "green" ? COLOR.greenTop : COLOR.redTop;
-    ctx.fillRect(x, y, cw, 2);
+    ctx.fillRect(x, y - s * 0.28, iw, 2);
   }
-  else if(kind === "pot")    drawPot(x, y - 8, cw, 26);
-  else if(kind === "gem")    drawGem(x, y - 6, cw, 24);
-  else if(kind === "scarab")   drawScarab(x, y - 5, cw, 22);
-  else if(kind === "scissors") drawScissors(x, y - 6, cw, 24);
+  else if(kind === "pot")      drawPot(x, y - s * 0.58, iw, s * 1.16);
+  else if(kind === "gem")      drawGem(x, y - s * 0.54, iw, s * 1.08);
+  else if(kind === "scarab")   drawScarab(x, y - s * 0.50, iw, s * 1.00);
+  else if(kind === "scissors") drawScissors(x, y - s * 0.54, iw, s * 1.08);
 
-  ctx.fillStyle = COLOR.ink;
-  ctx.font = '700 12px "M PLUS 1p", sans-serif';
+  ctx.fillStyle = "#f4f7fb";
   ctx.textAlign = "left";
-  ctx.fillText(label, x + cw + 8, y + 12);
+  ctx.fillText(label, x + iw + gap, y + font * 0.36);
   ctx.textAlign = "center";
+  ctx.restore();
 }
 
 function updateHud(){
@@ -3253,15 +3316,8 @@ function showStart(){
   hideVeils();
   startTitleMotion();
   loadTakenNames();
-  startBest.textContent = "";
-  if(best > 0){
-    startBest.append(document.createTextNode("自己ベスト " + toTimecode(best) + "　"));
-    const b = document.createElement("b");
-    b.textContent = titleFor(best);
-    startBest.append(b);
-  } else {
-    startBest.textContent = "赤をよけて、どこまで生き延びられるか";
-  }
+  startBest.textContent = "";      // 自己ベストは drawTitle() が大きく描く
+  startBest.hidden = true;
   startView.hidden = false;
   btn.hidden = true;
   updateHud();
@@ -3481,12 +3537,12 @@ function myRecordedName(){            // この端末が実際に記録を残し
 }
 
 function checkName(){
-  const box  = document.getElementById("nameBox");
-  const warn = document.getElementById("nameWarn");
-  if(!box || !warn) return;
+  const box   = document.getElementById("nameBox");
+  const label = document.getElementById("nameLabel");
+  if(!box || !label) return;
   const v = (nameEls[0].value || "").trim();
   const clash = !!(takenNames && v && v !== myRecordedName() && takenNames.has(v));
-  warn.hidden = !clash;
+  label.textContent = clash ? "その名前は使用中です" : "順位表のなまえ";
   box.classList.toggle("clash", clash);
 }
 
